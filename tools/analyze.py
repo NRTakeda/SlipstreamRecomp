@@ -116,7 +116,7 @@ def discover(n):
         if in_text(a):
             funcs[a] = 'eh'
     for name, info, shndx, value, size in n.syms:
-        if shndx and in_text(value) and (info & 0xF) == 2:
+        if shndx and in_text(value) and ((info & 0xF) == 2 or ((info & 0xF) == 0 and size > 0)):
             funcs.setdefault(value, 'sym')
     # Code pointers stored in data (vtables, callbacks)
     ptr_targets = set()

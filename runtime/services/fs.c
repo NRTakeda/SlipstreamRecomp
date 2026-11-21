@@ -75,14 +75,15 @@ typedef struct {
     uint8_t *font_arcs[8];   // Font/Font_*.sbfarc with the HUD letters' cells as wide as the letters (font_widths_patch)
 } RomImage;
 #define AOC_MAX 8
-static RomImage images[1 + AOC_MAX];  // [0] the game's, [index] add-on content
+#define MII_IMG_SLOT (AOC_MAX + 1)
+static RomImage images[2 + AOC_MAX];  // [0] the game's, [1..AOC_MAX] add-on content, [MII_IMG_SLOT] MiiModel (0x0100000000000802)
 static RomImage *R = &images[0];
 static FsInventoryClipLayout inventory_clip_layout;
 static _Atomic bool inventory_clip_layout_valid;
 
 // Reboot: the next boot builds its own index / overlay when the game opens the RomFS again.
 RT_ON_RESET(fs_reset) {
-    for (int k = 0; k <= AOC_MAX; k++) {
+    for (int k = 0; k <= MII_IMG_SLOT; k++) {
         RomImage *m = &images[k];
         for (int i = 0; i < m->ov_n; i++) {
             if (m->ov[i].fd >= 0) close(m->ov[i].fd);
@@ -1484,7 +1485,7 @@ static void rom_index(void) {
         R->rom_files[R->rom_nfiles++] = (RomFile){R->rom_data_off + data, size, path, (uint32_t)o};
         o += 0x20 + ((namelen + 3) & ~3u);
     }
-    voice_redirect(fmeta, foff, fsz);
+    if (rt_is_botw()) voice_redirect(fmeta, foff, fsz);
     // Overlay: replacement files are served from the overlay folder. The file-meta table is patched
     // (in a copy) to point them at data appended past the end of the image; reads there go to host files.
     for (int i = 0; i < R->rom_nfiles; i++) {
@@ -1506,38 +1507,40 @@ static void rom_index(void) {
         R->ov_n++;
         R->ov_end = (R->ov_end + size + 0xF) & ~0xFull;
     }
-    // The title screen's version line shows System/Version.txt ("1.8.2") through "Ver.%s": it reads "Savage Wind
-    // <major>.<minor>" instead (the "Ver." goes in fs_title_version_patch), unless the overlay folder replaces the
-    // file. The line's text box holds 15 characters, so the full version is only in Savage Wind Configuration.
-    for (int i = 0; i < R->rom_nfiles; i++) {
-        if (strcmp(R->rom_files[i].path, "System/Version.txt")) continue;
-        char host[1200];
-        struct stat sb;
-        if (mods_find_file(R->ov_sub, R->rom_files[i].path, host, sizeof host, NULL, 0) && !stat(host, &sb)) break;
-        extern const char *rt_version(void);  // (runtime/ui/launcher.mm)
-        static char text[64];
-        const char *v = rt_version(), *dot = strchr(v, '.');
-        int n = dot ? (int)strcspn(dot + 1, ".-") + (int)(dot - v) + 1 : (int)strlen(v);  // (up to the second '.')
-        snprintf(text, sizeof text, "Savage Wind %.*s", n, v);
-        if (strlen(text) > 15) snprintf(text, sizeof text, "Savage Wind");
-        meta_copy(fmeta, foff, fsz);
-        uint64_t rel = R->ov_end - R->rom_data_off, size = strlen(text);
-        memcpy(R->ov_meta + R->rom_files[i].meta + 8, &rel, 8);
-        memcpy(R->ov_meta + R->rom_files[i].meta + 0x10, &size, 8);
-        if (R->ov_n == R->ov_cap) { R->ov_cap = R->ov_cap ? R->ov_cap * 2 : 256; R->ov = realloc(R->ov, sizeof *R->ov * R->ov_cap); }
-        R->ov[R->ov_n++] = (Overlay){R->ov_end, size, NULL, -1, (const uint8_t *)text};
-        R->ov_end = (R->ov_end + size + 0xF) & ~0xFull;
-        break;
+    if (rt_is_botw()) {
+        // The title screen's version line shows System/Version.txt ("1.8.2") through "Ver.%s": it reads "Savage Wind
+        // <major>.<minor>" instead (the "Ver." goes in fs_title_version_patch), unless the overlay folder replaces the
+        // file. The line's text box holds 15 characters, so the full version is only in Savage Wind Configuration.
+        for (int i = 0; i < R->rom_nfiles; i++) {
+            if (strcmp(R->rom_files[i].path, "System/Version.txt")) continue;
+            char host[1200];
+            struct stat sb;
+            if (mods_find_file(R->ov_sub, R->rom_files[i].path, host, sizeof host, NULL, 0) && !stat(host, &sb)) break;
+            extern const char *rt_version(void);  // (runtime/ui/launcher.mm)
+            static char text[64];
+            const char *v = rt_version(), *dot = strchr(v, '.');
+            int n = dot ? (int)strcspn(dot + 1, ".-") + (int)(dot - v) + 1 : (int)strlen(v);  // (up to the second '.')
+            snprintf(text, sizeof text, "Savage Wind %.*s", n, v);
+            if (strlen(text) > 15) snprintf(text, sizeof text, "Savage Wind");
+            meta_copy(fmeta, foff, fsz);
+            uint64_t rel = R->ov_end - R->rom_data_off, size = strlen(text);
+            memcpy(R->ov_meta + R->rom_files[i].meta + 8, &rel, 8);
+            memcpy(R->ov_meta + R->rom_files[i].meta + 0x10, &size, 8);
+            if (R->ov_n == R->ov_cap) { R->ov_cap = R->ov_cap ? R->ov_cap * 2 : 256; R->ov = realloc(R->ov, sizeof *R->ov * R->ov_cap); }
+            R->ov[R->ov_n++] = (Overlay){R->ov_end, size, NULL, -1, (const uint8_t *)text};
+            R->ov_end = (R->ov_end + size + 0xF) & ~0xFull;
+            break;
+        }
+        hud_letters_patch(fmeta, foff, fsz);
+        font_widths_patch(fmeta, foff, fsz);
+        text_sheets_scan();
+        menu_tex_scan();
+        if (R == &images[0] && !atomic_load_explicit(&inventory_clip_layout_valid, memory_order_acquire))
+            LOG("[fs] Inventory clip layout unavailable; using the game's clipping\n");
+        rstb_patch(fmeta, foff, fsz);
+        haze_patch();
+        shrine_sensor_note();
     }
-    hud_letters_patch(fmeta, foff, fsz);
-    font_widths_patch(fmeta, foff, fsz);
-    text_sheets_scan();
-    menu_tex_scan();
-    if (R == &images[0] && !atomic_load_explicit(&inventory_clip_layout_valid, memory_order_acquire))
-        LOG("[fs] Inventory clip layout unavailable; using the game's clipping\n");
-    rstb_patch(fmeta, foff, fsz);
-    haze_patch();
-    shrine_sensor_note();
     if (R->ov_n) LOG("[fs] overlay: %d romfs files replaced\n", R->ov_n);
     if (R->ov_meta) { R->patches[R->npatches++] = (Patch){R->ov_meta_off, R->ov_meta_size, R->ov_meta}; }
     add_new_files(h, dmeta, dsz, fsz);
@@ -1551,6 +1554,7 @@ static void rom_index(void) {
 // 0x71014b854e in the Ghidra project, read by FUN_7100d4b57c and FUN_7100d4bca0); "%s" leaves just "Savage Wind
 // <version>". Called once main is loaded; anything else at that address is left alone.
 void fs_title_version_patch(void) {
+    if (!rt_is_botw() || !g_site.title_version_format) return;
     char *fmt = (char *)(uintptr_t)g_site.title_version_format;
     if (memcmp(fmt, "Ver.%s", 7)) { LOG("[fs] title version: \"Ver.%%s\" not found, left as is\n"); return; }
     memcpy(fmt, "%s", 3);
@@ -2104,6 +2108,98 @@ static Service *open_host_fs(const char *sub) {
     return service_new("IFileSystem", filesystem, fs);
 }
 
+static void write_mii_nftr(const char *dir, const char *name) {
+    uint8_t zeros[64] = {0}, zbuf[128] = {0};
+    uLongf zlen = sizeof zbuf;
+    compress(zbuf, &zlen, zeros, sizeof zeros);
+    uint32_t hdr_size = 0x2364, total_size = hdr_size + (uint32_t)zlen;
+    char path[1200];
+    snprintf(path, sizeof path, "%s/%s", dir, name);
+    struct stat sb;
+    if (stat(path, &sb) == 0 && sb.st_size == (off_t)total_size) return;
+    uint8_t *buf = calloc(1, total_size);
+    if (!buf) return;
+    memcpy(buf, "NFTR", 4);
+    uint32_t v1 = 1;
+    memcpy(buf + 4, &v1, 4);
+    memcpy(buf + 8, &total_size, 4);
+    for (uint32_t i = 0; i < 11; i++) {
+        uint32_t psize = 0x1000, align = 0x200;
+        memcpy(buf + 0x0c + i * 4, &psize, 4);
+        memcpy(buf + 0x38 + i * 4, &align, 4);
+    }
+    for (uint32_t i = 0; i < 320; i++) {
+        uint8_t *e = buf + 0x64 + i * 0x1c;
+        uint32_t off = hdr_size, uz = sizeof zeros, cz = (uint32_t)zlen;
+        uint16_t wh = 8;
+        memcpy(e + 0x00, &off, 4);
+        memcpy(e + 0x04, &uz, 4);
+        memcpy(e + 0x08, &cz, 4);
+        memcpy(e + 0x14, &wh, 2);
+        memcpy(e + 0x16, &wh, 2);
+        e[0x18] = 0;  // format R8_UNORM
+        e[0x19] = 1;  // mip_count = 1
+        e[0x1a] = 0;  // tile_mode
+    }
+    memcpy(buf + hdr_size, zbuf, zlen);
+    FILE *f = fopen(path, "wb");
+    if (f) { fwrite(buf, 1, total_size, f); fclose(f); }
+    free(buf);
+}
+
+static void write_mii_nfsr(const char *dir, const char *name) {
+    uint8_t zeros[128] = {0}, zbuf[256] = {0};
+    uLongf zlen = sizeof zbuf;
+    compress(zbuf, &zlen, zeros, sizeof zeros);
+    uint32_t hdr_size = 0x14dd4, total_size = hdr_size + (uint32_t)zlen;
+    char path[1200];
+    snprintf(path, sizeof path, "%s/%s", dir, name);
+    struct stat sb;
+    if (stat(path, &sb) == 0 && sb.st_size == (off_t)total_size) return;
+    uint8_t *buf = calloc(1, total_size);
+    if (!buf) return;
+    memcpy(buf, "NFSR", 4);
+    uint32_t v1 = 1;
+    memcpy(buf + 4, &v1, 4);
+    memcpy(buf + 8, &total_size, 4);
+    for (uint32_t i = 0; i < 12; i++) {
+        uint32_t psize = 0x1000, align = 8;
+        memcpy(buf + 0x0c + i * 4, &psize, 4);
+        memcpy(buf + 0x3c + i * 4, &align, 4);
+    }
+    static const uint32_t attr_off[5] = {0, 24, 36, 48, 60};
+    static const uint32_t attr_sz[5]  = {24, 12, 12, 12, 12};
+    for (uint32_t i = 0; i < 857; i++) {
+        uint8_t *e = buf + 0x6c + i * 0x58;
+        uint32_t off = hdr_size, uz = sizeof zeros, cz = (uint32_t)zlen;
+        uint32_t idx_off = 72, idx_sz = 6;
+        memcpy(e + 0x00, &off, 4);
+        memcpy(e + 0x04, &uz, 4);
+        memcpy(e + 0x08, &cz, 4);
+        memcpy(e + 0x10, attr_off, sizeof attr_off);
+        memcpy(e + 0x24, attr_sz, sizeof attr_sz);
+        memcpy(e + 0x38, &idx_off, 4);
+        memcpy(e + 0x3c, &idx_sz, 4);
+    }
+    memcpy(buf + hdr_size, zbuf, zlen);
+    FILE *f = fopen(path, "wb");
+    if (f) { fwrite(buf, 1, total_size, f); fclose(f); }
+    free(buf);
+}
+
+static Service *open_mii_model_storage(void) {
+    const char *dir = "cache/mii_model";
+    mkdir("cache", 0755);
+    mkdir(dir, 0755);
+    write_mii_nftr(dir, "NXTextureLowLinear.dat");
+    write_mii_nftr(dir, "NXTextureLowSRGB.dat");
+    write_mii_nftr(dir, "NXTextureMidLinear.dat");
+    write_mii_nftr(dir, "NXTextureMidSRGB.dat");
+    write_mii_nfsr(dir, "ShapeHigh.dat");
+    write_mii_nfsr(dir, "ShapeMid.dat");
+    return open_image(MII_IMG_SLOT, dir, "IStorage(mii_model)");
+}
+
 // ------------------------------------------------------------------ fsp-srv
 SERVICE("fsp-srv", fsp_srv) {
     (void)s;
@@ -2121,6 +2217,10 @@ SERVICE("fsp-srv", fsp_srv) {
     case 200: ipc_return_object(resp, open_romfs_storage()); break;  // OpenDataStorageByCurrentProcess
     case 202: {  // OpenDataStorageByDataId: add-on content, or system data archives (not available)
         uint64_t id = IN(uint64_t, 8), base = fs_aoc_base_id();
+        if (id == 0x0100000000000802ull) {
+            Service *mii = open_mii_model_storage();
+            if (mii) { ipc_return_object(resp, mii); break; }
+        }
         Service *aoc = id > base && id <= base + AOC_MAX ? open_aoc_storage((int)(id - base)) : NULL;
         if (aoc) { ipc_return_object(resp, aoc); break; }
         LOG("[fs] OpenDataStorageByDataId %llx (not available)\n", (unsigned long long)id);

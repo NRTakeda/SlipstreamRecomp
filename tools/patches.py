@@ -1317,5 +1317,7 @@ PATCHES = {
 
 def table(sites):
     """address -> patch, for the main module whose sites these are (tools/game_sites.py; an optional site it lacks
-    has no patch)"""
+    has no patch; non-BotW games pass empty sites and get no patches)"""
+    if not sites:
+        return {}
     return {sites[name]: fn for name, fn in PATCHES.items() if name in sites}

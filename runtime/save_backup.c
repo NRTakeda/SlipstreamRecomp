@@ -10,6 +10,7 @@
 #include <string.h>
 #include <time.h>
 
+#include "game_sites.h"
 #include "rt.h"
 #include "services/save_convert.h"
 #include "settings.h"
@@ -54,7 +55,7 @@ static int by_name(const void *a, const void *b) { return strcmp(a, b); }  // (d
 // (runtime/main.c: before each game start takes the save folder's lock)
 void save_backup_at_start(void) {
     static bool done;  // (once a run: a reboot starts the game again in the same process)
-    if (done || !g_settings.save_backups || getenv("SAVAGEWIND_SAVE_DIR")) return;
+    if (!rt_is_botw() || done || !g_settings.save_backups || getenv("SAVAGEWIND_SAVE_DIR")) return;
     done = true;
     const char *save = g_settings.save_dir[0] ? g_settings.save_dir : SAVE_DIR;
     SDL_Time t = 0, last = 0;

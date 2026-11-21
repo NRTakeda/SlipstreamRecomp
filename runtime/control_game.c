@@ -36,7 +36,7 @@ void control_tp_frame(uint64_t frame);    // runtime/control_tp.c
 void control_game_frame(uint64_t frame) {
     if (control_enabled()) {  // (the profiler and teleport are developer mode only)
         control_prof_frame(frame);
-        control_tp_frame(frame);
+        if (rt_is_botw()) control_tp_frame(frame);
     }
     uint64_t now = plat_now_ns();
     if (!boot_ns) boot_ns = now;
@@ -151,6 +151,7 @@ static void presence_frame(void) {
 }
 
 void control_place_frame(void) {
+    if (!rt_is_botw()) return;
     presence_frame();
     static int on = -1;
     static uint64_t last_ns;

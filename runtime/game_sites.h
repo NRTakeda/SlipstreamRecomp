@@ -2,7 +2,9 @@
 // tools/game_sites.py finds them for the version the game code was generated from, and the game library carries them
 // (runtime/gamelib.h, the generated layout.c). g_site holds them once the library is loaded (gamelib_load).
 #pragma once
+#include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 
 // name (as in tools/game_sites.py) and what is there
 #define GAME_SITES(X)                                                                                                  \
@@ -111,6 +113,10 @@ extern "C" {
 extern GameSites g_site;
 // The game version the loaded game code is for ("1.8.2"; "" before gamelib_load).
 extern const char *g_game_version;
+
+static inline bool rt_is_botw(void) {
+    return !g_game_version || (strcmp(g_game_version, "4.0.1") != 0 && strcmp(g_game_version, "158c0c7399aabd7b") != 0);
+}
 
 #ifdef __cplusplus
 }

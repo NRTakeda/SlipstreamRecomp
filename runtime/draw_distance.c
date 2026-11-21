@@ -60,6 +60,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "game_sites.h"
 #include "hle.h"
 #include "settings.h"
 
@@ -98,6 +99,7 @@ static const float k_factor[DRAWDIST_COUNT] = {1.0f, 1.15f, 1.2f, 0.6f};  // (DR
 #define POTATO_FAR 0.75f
 
 float draw_distance_factor(void) {
+    if (!rt_is_botw()) return 1.0f;
     static float env = -1;
     if (env < 0) {
         const char *s = getenv("SAVAGEWIND_TRAVERSE_SCALE");

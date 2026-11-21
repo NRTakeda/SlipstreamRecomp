@@ -26,7 +26,7 @@ static uint64_t last_ns;
 static float pad_l[2], pad_r[2], pad_up, pad_down;  // the controller while it is on (hle/input.c recompute_pad)
 static bool pad_fast, pad_slow;
 
-bool freecam_active(void) { return active; }
+bool freecam_active(void) { return rt_is_botw() && active; }
 
 static bool view_camera(const float *f) {
     return (fabsf(f[0]) + fabsf(f[1]) + fabsf(f[2])) > 1.0f && f[7] > 0.5f;  // eye off the origin, up near +y
@@ -61,6 +61,7 @@ void rt_lookat(uint64_t cam) {
 }
 
 void freecam_toggle(void) {
+    if (!rt_is_botw()) return;
     if (!active && !seen) return;  // (no view camera yet: the title screen)
     // Only in play: not while the game is paused (its menus, the map, a pause for loading), on the start screen or
     // while the overlay has the controls. Turning it off always works.

@@ -20,6 +20,7 @@
 
 #include "control.h"
 #include "control_cells.h"
+#include "game_sites.h"
 #include "rt.h"
 
 bool control_camera_view(float view[12]);  // runtime/nvn/*
@@ -107,6 +108,7 @@ void control_fly_frame(uint64_t frame) {
 
 // The hotkey and the `fly` command both come here. Returns the new state; false (and on stays off) when Link is not there.
 bool control_fly_set(bool want) {
+    if (!rt_is_botw()) return false;
     if (want == atomic_load(&on)) return want;
     if (want) {
         if (!control_cell_get(&control_cell_player_pos, fp)) {

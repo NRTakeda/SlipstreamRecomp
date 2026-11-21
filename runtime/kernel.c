@@ -5,6 +5,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "game_sites.h"
 #include "hle.h"
 #include "kernel.h"
 #include "platform.h"
@@ -148,7 +149,10 @@ static void core_best_update(Core *k) {  // (k->m held)
 }
 
 static bool cores_on(void) {
-    if (g_cores_on < 0) g_cores_on = !(getenv("SAVAGEWIND_CORES") && !strcmp(getenv("SAVAGEWIND_CORES"), "0"));
+    if (g_cores_on < 0) {
+        const char *e = getenv("SAVAGEWIND_CORES");
+        g_cores_on = e ? strcmp(e, "0") != 0 : rt_is_botw();
+    }
     return g_cores_on;
 }
 

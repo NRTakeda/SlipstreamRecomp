@@ -949,3 +949,6 @@ HLE_FUNC("_ZN5movie7DecoderC1ENS_11DecoderTypeENS_19DecoderOutputFormatENS_11Dec
     self[0] = vt;
     self[1] = (uint64_t)(uintptr_t)d;
 }
+HLE_FUNC("_ZN5movie7DecoderC1ENS_11DecoderTypeENS_19DecoderOutputFormatENS_11DecoderModeE", movie_decoder_ctor3) {
+    movie_decoder_ctor(c);
+}

@@ -11,6 +11,7 @@
 #include <string.h>
 #include <time.h>
 
+#include "../game_sites.h"
 #include "../hle.h"
 #include "../platform.h"
 
@@ -91,6 +92,7 @@ void photo_take(void) {
 
 // (hle/input.c) keys while the free camera is on; true: taken
 bool photo_key(int scancode) {
+    if (!rt_is_botw()) return false;
     switch (scancode) {
     case SDL_SCANCODE_F8: filter_next(); return true;
     case SDL_SCANCODE_F7: shot(); return true;

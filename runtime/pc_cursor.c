@@ -109,7 +109,7 @@ static int beast_hover=-1;
 static bool pointer_test(void) { return getenv("SAVAGEWIND_PC_POINTER_SCRIPT") != NULL; }
 
 static bool enabled(void) {
-    return g_settings.pc_cursor;
+    return rt_is_botw() && g_settings.pc_cursor;
 }
 bool pc_cursor_enabled(void) { return enabled(); }
 extern bool menu_cursor_free(void);

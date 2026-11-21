@@ -2360,6 +2360,7 @@ static int g_ndlc_lists;
 static bool g_dlc_button;
 
 extern "C" void rt_title_menu_prepare(void) {
+    if (!rt_is_botw() || !g_site.main_data || !g_site.main_end) return;
     int n = 0;
     g_ndlc_lists = 0;
     g_dlc_button = false;

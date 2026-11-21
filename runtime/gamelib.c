@@ -78,6 +78,11 @@ const char *g_game_version = "";
 // Required sites must be present. Optional feature groups can be absent on an
 // older game build; clear their helpers instead of preventing the game loading.
 static bool take_sites(const GameLibTables *t) {
+    if (*t->nsites == 0) {
+        memset(&g_site, 0, sizeof g_site);
+        g_game_version = t->version;
+        return true;
+    }
     static const struct {
         const char *name;
         size_t off;

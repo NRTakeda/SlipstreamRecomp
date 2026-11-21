@@ -11,6 +11,7 @@
 #endif
 
 #include "gamelib.h"
+#include "game_sites.h"
 #include "paths.h"
 #include "post_update.h"
 #include "steam_shortcuts.h"
@@ -69,8 +70,10 @@ static void rtld_init_sdk(Cpu *c) { module_init(c, loader_module("sdk")); }
 static void rtld_init_main(Cpu *c) {
     for (int i = g_nmodules - 1; i >= 0; i--)
         if (strcmp(g_modules[i].name, "sdk")) module_init(c, &g_modules[i]);
-    extern void rt_title_menu_prepare(void);  // runtime/ui/game_options.mm: tables the constructors filled
-    rt_title_menu_prepare();
+    if (rt_is_botw()) {
+        extern void rt_title_menu_prepare(void);  // runtime/ui/game_options.mm: tables the constructors filled
+        rt_title_menu_prepare();
+    }
 }
 static void rtld_fini_main(Cpu *c) {
     LOG("nnMain returned\n");
@@ -179,13 +182,13 @@ static void boot(const char *root) {
     char why[512];
     if (!gamelib_load(root, why, sizeof why)) FATAL("%s\n", why);
     loader_load(exefs);
-    { extern void fs_title_version_patch(void); fs_title_version_patch(); }  // (runtime/services/fs.c)
+    if (rt_is_botw()) { extern void fs_title_version_patch(void); fs_title_version_patch(); }  // (runtime/services/fs.c)
     { extern void settings_load(void); settings_load(); }
     { extern void language_booted(void); language_booted(); }  // (runtime/language.c)
     plat_cpu_placement();
     kernel_init();
     dispatch_init();
-    { extern void rupees_start(void); rupees_start(); }  // (Cheats > Infinite rupees, `rupees`: runtime/rupees.c)
+    if (rt_is_botw()) { extern void rupees_start(void); rupees_start(); }  // (Cheats > Infinite rupees, `rupees`: runtime/rupees.c)
     { extern void jpeg_debug_init(void); jpeg_debug_init(); }
 
     uint32_t stack_size = 0x100000;

@@ -1096,7 +1096,7 @@ SERVICE("audren:u", audren_u) {
         ipc_return_object(resp, service_new("IAudioRenderer", audio_renderer, r));
         break;
     }
-    case 1: OUT(uint64_t, 0) = 0x1000000; resp_size(resp, 8); break;  // GetWorkBufferSize: 16 MB
+    case 1: OUT(uint64_t, 0) = loader_find_symbol("_ZN2nn5audio6server17AudioRenderSystem29ExecuteAudioRendererRenderingEv") ? 0x1000000 : 0x5a000; resp_size(resp, 8); break;  // GetWorkBufferSize
     case 2: case 4: ipc_return_object(resp, service_new("IAudioDevice", audio_device, NULL)); break;
     default: LOG("[audren] cmd %u (ok)\n", req->cmd);
     }
@@ -1286,7 +1286,12 @@ static void sdk_sleep(Cpu *c, uint64_t ns) {
 // the game's RequestUpdate from changing voices while a frame is generated.
 static void sdk_render_thread(Cpu *c) {
     SdkRen *r = &g_sdkren;
-    uint64_t exec = guest_sym("_ZN2nn5audio6server17AudioRenderSystem29ExecuteAudioRendererRenderingEv");
+    uint64_t exec = loader_find_symbol("_ZN2nn5audio6server17AudioRenderSystem29ExecuteAudioRendererRenderingEv");
+    bool impl_exec = false;
+    if (!exec) {
+        exec = guest_sym("_ZN2nn5audio6server24AudioRendererManagerImpl17AudioRendererImpl29ExecuteAudioRendererRenderingEv");
+        impl_exec = true;
+    }
     uint64_t lock = guest_sym("_ZN2nn2os12SdkMutexType4LockEv");
     uint64_t unlock = guest_sym("_ZN2nn2os12SdkMutexType6UnlockEv");
     uint32_t N = r->samples ? r->samples : 240;
@@ -1296,7 +1301,9 @@ static void sdk_render_thread(Cpu *c) {
     kernel_thread_off_cores();       // (the DSP's work: beside the game's cores, not waiting for one)
     plat_thread_realtime(frame_ns);  // (the host thread under it: ahead of the game's when the CPU is busy)
     while (r->open) {
-        if (*(volatile const uint32_t *)(uintptr_t)(r->context + 0x14)) {  // not started (StartAudioRenderer clears it)
+        bool not_started = impl_exec ? (*(volatile const uint8_t *)(uintptr_t)(r->renderer + 0x70) == 0)
+                                     : (*(volatile const uint32_t *)(uintptr_t)(r->context + 0x14) != 0);
+        if (not_started) {  // not started (StartAudioRenderer clears it / sets +0x70)
             sdk_sleep(c, 5000000);
             next = plat_now_ns();
             continue;
@@ -1321,13 +1328,13 @@ static void sdk_render_thread(Cpu *c) {
             if (now - next > 100000000) next = now;  // (more than 100 ms late: don't catch up)
             next += frame_ns;
         }
-        uint64_t mutex = r->renderer + 0x70 + 0x2d0, t0 = plat_now_ns();
+        uint64_t mutex = impl_exec ? (r->renderer + 0x60 + 0x1d0) : (r->renderer + 0x70 + 0x2d0), t0 = plat_now_ns();
         c->x[0] = mutex;
         guest_call(c, lock);
         uint64_t t1 = plat_now_ns();
         r->out_n = 0;
         if (r->open) {
-            c->x[0] = r->renderer + 0x70;
+            c->x[0] = impl_exec ? r->renderer : (r->renderer + 0x70);
             guest_call(c, exec);
         }
         c->x[0] = mutex;
@@ -1370,11 +1377,12 @@ static void sdk_render_thread(Cpu *c) {
 // (it did: frames took up to 75 ms, and the sound broke up).
 static void sdk_event_thread(Cpu *c) {
     SdkRen *r = &g_sdkren;
+    bool impl_exec = !loader_find_symbol("_ZN2nn5audio6server17AudioRenderSystem29ExecuteAudioRendererRenderingEv");
     uint64_t sig = guest_sym("_ZN2nn2os17SignalSystemEventEPNS0_15SystemEventTypeE");
     kernel_thread_off_cores();
     while (r->open) {
         if (!sdk_wait(&g_sdk_frame_cv, &r->signal, 50000000)) continue;
-        c->x[0] = *(const uint64_t *)(uintptr_t)r->context;  // the event OpenAudioRenderer made (manual execution)
+        c->x[0] = impl_exec ? r->context : *(const uint64_t *)(uintptr_t)r->context;  // the event OpenAudioRenderer made (manual execution)
         guest_call(c, sig);
     }
     r->threads--;

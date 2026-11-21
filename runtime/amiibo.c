@@ -17,6 +17,7 @@
 #include <string.h>
 #include <sys/stat.h>
 
+#include "game_sites.h"
 #include "paths.h"
 #include "platform.h"
 #include "rt.h"
@@ -204,7 +205,7 @@ static void list_read(void) {
     LOG("[amiibo] %d figures in %s\n", g_nfigs, dir);
 }
 
-int amiibo_count(void) { pthread_once(&g_once, list_read); return g_nfigs; }
+int amiibo_count(void) { if (!rt_is_botw()) return 0; pthread_once(&g_once, list_read); return g_nfigs; }
 const Amiibo *amiibo_at(int i) { return i >= 0 && i < amiibo_count() ? &g_figs[i] : NULL; }
 
 const char *amiibo_folder(void) {

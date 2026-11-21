@@ -40,6 +40,7 @@ def image_size(h):
 GAME_SUBSDKS = {
     'de0b6ac4efc1dda7': ['subsdk0'],  # 1.8.2
     'cd57b23fa4bbad65': ['subsdk0'],  # 1.9.0
+    '158c0c7399aabd7b': ['subsdk0'],  # MK8DX 4.0.1
 }
 
 

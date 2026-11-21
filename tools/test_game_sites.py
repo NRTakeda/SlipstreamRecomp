@@ -94,7 +94,7 @@ def main():
     check(rt and set(rt) <= names, f'the runtime\'s sites are in SITES: {set(rt) - names}')
     check(set(patches.PATCHES) <= names, f'tools/patches.py\'s sites are in SITES: {set(patches.PATCHES) - names}')
     for v in gs.VERSIONS:
-        if v.supported:
+        if v.supported and v.name not in gs.NON_BOTW_VERSIONS:
             listed = set(gs.KNOWN.get(v.name, {}))
             check(names - gs.OPTIONAL <= listed <= names, f'{v.name}: KNOWN lists every site (optional ones may be left '
                   f'out): {names - gs.OPTIONAL - listed or listed - names}')

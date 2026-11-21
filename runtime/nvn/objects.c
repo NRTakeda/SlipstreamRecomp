@@ -51,6 +51,10 @@ static uint32_t device_integer(uint32_t which) {
         if (log < 0) log = getenv("SAVAGEWIND_NVN_LOG") != NULL;
         if (log && !seen[which]) { seen[which] = 1; LOG("[nvn] device integer %u\n", which); }
     }
+    if (!rt_is_botw()) {
+        if (which == 0) return 53;
+        if (which == 1) return 211;
+    }
     return which < sizeof v / sizeof *v ? v[which] : 0;
 }
 
@@ -1030,7 +1034,7 @@ NVN(nvnTexturePoolGetSize) { RET(G(uint32_t, A(0), 24)); }
 static void register_texture(Cpu *c) {
     NvnDescPool *d = HOST(NvnDescPool, A(0));
     int id = (int)A(1);
-    if (id < 0 || id >= d->count) return;
+    if (!d || id < 0 || id >= d->count) return;
     NvnTexEntry *e = &((NvnTexEntry *)d->entries)[id];
     e->tex = HOST(NvnTexture, A(2));
     e->has_view = A(3) != 0;

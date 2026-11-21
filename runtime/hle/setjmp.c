@@ -86,3 +86,90 @@ void jpeg_debug_init(void) {
     if (!(jpeg_encode = dispatch_lookup(a))) return;
     hle_override(a, jpeg_encode_logged, "JpegEncoder::Encode");
 }
+
+// SDK bignum assembly helpers exported as STT_NOTYPE symbols without .eh_frame entries.
+HLE_FUNC("nndetailCryptoBignumMulAddWords", bignum_mul_add_words) {
+    uint32_t *rp = (uint32_t *)(uintptr_t)c->x[0];
+    const uint32_t *ap = (const uint32_t *)(uintptr_t)c->x[1];
+    int num = (int)c->x[2];
+    uint64_t w = (uint32_t)c->x[3], carry = 0;
+    for (int i = 0; i < num; i++) {
+        uint64_t t = (uint64_t)rp[i] + (uint64_t)ap[i] * w + carry;
+        rp[i] = (uint32_t)t;
+        carry = t >> 32;
+    }
+    c->x[0] = (uint32_t)carry;
+}
+
+HLE_FUNC("nndetailCryptoBignumMulWords", bignum_mul_words) {
+    uint32_t *rp = (uint32_t *)(uintptr_t)c->x[0];
+    const uint32_t *ap = (const uint32_t *)(uintptr_t)c->x[1];
+    int num = (int)c->x[2];
+    uint64_t w = (uint32_t)c->x[3], carry = 0;
+    for (int i = 0; i < num; i++) {
+        uint64_t t = (uint64_t)ap[i] * w + carry;
+        rp[i] = (uint32_t)t;
+        carry = t >> 32;
+    }
+    c->x[0] = (uint32_t)carry;
+}
+
+HLE_FUNC("nndetailCryptoBignumAddWords", bignum_add_words) {
+    uint32_t *rp = (uint32_t *)(uintptr_t)c->x[0];
+    const uint32_t *ap = (const uint32_t *)(uintptr_t)c->x[1];
+    const uint32_t *bp = (const uint32_t *)(uintptr_t)c->x[2];
+    int num = (int)c->x[3];
+    uint64_t carry = 0;
+    for (int i = 0; i < num; i++) {
+        uint64_t t = (uint64_t)ap[i] + (uint64_t)bp[i] + carry;
+        rp[i] = (uint32_t)t;
+        carry = t >> 32;
+    }
+    c->x[0] = (uint32_t)carry;
+}
+
+HLE_FUNC("nndetailCryptoBignumSubWords", bignum_sub_words) {
+    uint32_t *rp = (uint32_t *)(uintptr_t)c->x[0];
+    const uint32_t *ap = (const uint32_t *)(uintptr_t)c->x[1];
+    const uint32_t *bp = (const uint32_t *)(uintptr_t)c->x[2];
+    int num = (int)c->x[3];
+    uint64_t borrow = 0;
+    for (int i = 0; i < num; i++) {
+        uint64_t a = ap[i], b = bp[i];
+        uint64_t t = a - b - borrow;
+        rp[i] = (uint32_t)t;
+        borrow = (t >> 63) & 1;
+    }
+    c->x[0] = (uint32_t)borrow;
+}
+
+HLE_FUNC("nndetailCryptoBignum_mul_comba8", bignum_mul_comba8) {
+    uint32_t *r = (uint32_t *)(uintptr_t)c->x[0];
+    const uint32_t *a = (const uint32_t *)(uintptr_t)c->x[1];
+    const uint32_t *b = (const uint32_t *)(uintptr_t)c->x[2];
+    unsigned __int128 acc = 0;
+    for (int k = 0; k < 15; k++) {
+        for (int i = 0; i < 8; i++) {
+            int j = k - i;
+            if (j >= 0 && j < 8) acc += (unsigned __int128)a[i] * b[j];
+        }
+        r[k] = (uint32_t)acc;
+        acc >>= 32;
+    }
+    r[15] = (uint32_t)acc;
+}
+
+HLE_FUNC("nndetailCryptoBignum_sqr_comba8", bignum_sqr_comba8) {
+    uint32_t *r = (uint32_t *)(uintptr_t)c->x[0];
+    const uint32_t *a = (const uint32_t *)(uintptr_t)c->x[1];
+    unsigned __int128 acc = 0;
+    for (int k = 0; k < 15; k++) {
+        for (int i = 0; i < 8; i++) {
+            int j = k - i;
+            if (j >= 0 && j < 8) acc += (unsigned __int128)a[i] * a[j];
+        }
+        r[k] = (uint32_t)acc;
+        acc >>= 32;
+    }
+    r[15] = (uint32_t)acc;
+}

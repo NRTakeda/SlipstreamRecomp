@@ -66,6 +66,7 @@ static int env_int(const char *name, int def) {
 }
 
 bool framepace_on(void) {
+    if (!rt_is_botw()) return false;
     static int on = -1;
     if (on < 0) on = env_int("SAVAGEWIND_FRAMEPACE", 1) != 0;
     return on;
@@ -75,8 +76,9 @@ bool framepace_on(void) {
 // The menus: the game is paused (pause menu, map), or the title screen's menu is up (screen 1 in the UI screen
 // manager [screen_mgr]: +0x28 count, +0x30 screens by id).
 static bool in_menu(void) {
-    if (*(uint32_t *)(uintptr_t)PAUSE_STATE) return true;
-    uint64_t mgr = *(uint64_t *)(uintptr_t)g_site.screen_mgr;
+    if (!rt_is_botw()) return false;
+    if (PAUSE_STATE && *(uint32_t *)(uintptr_t)PAUSE_STATE) return true;
+    uint64_t mgr = g_site.screen_mgr ? *(uint64_t *)(uintptr_t)g_site.screen_mgr : 0;
     return mgr && VF(uint32_t, mgr, 0x28) > 1 && VF(uint64_t, mgr, 0x30) &&
            *(uint64_t *)(uintptr_t)(VF(uint64_t, mgr, 0x30) + 8);
 }
@@ -85,6 +87,7 @@ static bool in_menu(void) {
 // +0x1d2b8, as hasActiveEvent, 1.8.2 0x7000ffa208, reads it; the time of day stands still meanwhile). Some of their
 // waits count frames: the new game's opening gave Link control 2 s early at 60 fps, 3 s at 120.
 static bool in_event(void) {
+    if (!rt_is_botw() || !g_site.event_mgr) return false;
     uint64_t evt = *(uint64_t *)(uintptr_t)g_site.event_mgr;
     return evt && *(uint64_t *)(uintptr_t)(evt + 0x1d2b8);
 }
@@ -94,6 +97,7 @@ bool framepace_in_event(void) { return in_event(); }
 // The active event's name ("Demo014_0"): the event's name string, a char pointer at +0x68 to its buffer at +0x74
 // (found with a probe on the new game's opening, Demo169_0). "" when there is none or it isn't in the heap.
 static const char *event_name(void) {
+    if (!rt_is_botw() || !g_site.event_mgr) return "";
     uint64_t evt = *(uint64_t *)(uintptr_t)g_site.event_mgr;
     uint64_t ev = evt ? *(uint64_t *)(uintptr_t)(evt + 0x1d2b8) : 0;
     if (!ev) return "";
@@ -130,6 +134,7 @@ static bool link_near(float x, float z, float r) {
 
 // The event running now is one of those (and its name, logged once per event)
 static bool event_at_30(void) {
+    if (!rt_is_botw() || !g_site.event_mgr) return false;
     static uint64_t last;
     uint64_t evt = *(uint64_t *)(uintptr_t)g_site.event_mgr;
     uint64_t ev = evt ? *(uint64_t *)(uintptr_t)(evt + 0x1d2b8) : 0;
@@ -147,6 +152,7 @@ static bool event_at_30(void) {
 
 // The game's UI screen `id` (the screen manager's array; ids as runtime/ui/game_options.mm uses them)
 static uint64_t screen_at(uint32_t id) {
+    if (!rt_is_botw() || !g_site.screen_mgr) return 0;
     uint64_t mgr = *(uint64_t *)(uintptr_t)g_site.screen_mgr;
     if (!mgr || VF(uint32_t, mgr, 0x28) <= id) return 0;
     uint64_t arr = VF(uint64_t, mgr, 0x30);
@@ -168,7 +174,7 @@ bool framepace_dialogue_ui(void) {
 
 // (screens: 1 the start screen, 0x38 its load and confirmation menus; 0x38 can also be used over a paused game)
 bool framepace_title_ui(void) {
-    if (*(uint32_t *)(uintptr_t)PAUSE_STATE) return false;
+    if (!rt_is_botw() || (PAUSE_STATE && *(uint32_t *)(uintptr_t)PAUSE_STATE)) return false;
     return screen_up(1) || screen_up(0x38);
 }
 bool framepace_dlc_ui(void) { return screen_up(0x3f); }  // (screen 0x3f)
@@ -177,8 +183,9 @@ bool framepace_dlc_ui(void) { return screen_up(0x3f); }  // (screen 0x3f)
 bool framepace_loading_ui(void) { return screen_up(0x55); }
 
 // (pause state 2: the pause menu's pages and the map; 4 is the quick menus over the game)
-bool framepace_menu_ui(void) { return *(uint32_t *)(uintptr_t)PAUSE_STATE == 2; }
+bool framepace_menu_ui(void) { return rt_is_botw() && PAUSE_STATE && *(uint32_t *)(uintptr_t)PAUSE_STATE == 2; }
 bool framepace_map_ui(void) {
+    if (!rt_is_botw() || !g_site.screen_mgr) return false;
     uint64_t screen = screen_at(0x2a);
     int mode = ui_layout_map_mode(screen);
     if (mode >= 0) return mode && screen_draws(screen);
@@ -190,7 +197,7 @@ bool framepace_map_ui(void) {
     uint64_t map = VF(uint64_t, arr, 8 * 0x2a);
     return map && VF(uint8_t, map, 0xfe) == 2;  // same active map screen as pc_cursor.c
 }
-bool framepace_quick_ui(void) { return *(uint32_t *)(uintptr_t)PAUSE_STATE == 4; }
+bool framepace_quick_ui(void) { return rt_is_botw() && PAUSE_STATE && *(uint32_t *)(uintptr_t)PAUSE_STATE == 4; }
 // A shop's panes, where they are (#599): ShopInfo_00 over a counter, ShopBtnList5_00 / ShopBtnList20_00 and ShopBG_00
 // at a merchant, ShopHorse_00 at a stable, and the list's selection box (BoxCursorTV) while one is up. The game makes
 // these screens when a shop's panel opens and drops them when it closes; each is in the screen manager [screen_mgr]
@@ -213,6 +220,7 @@ static int shop_walk(uint64_t pane, int depth, float *xy, int n, int max, int *b
 }
 
 int framepace_shop_panes(float *xy, int max) {
+    if (!rt_is_botw() || !g_site.screen_mgr) return 0;
     uint64_t mgr = *(uint64_t *)(uintptr_t)g_site.screen_mgr, top = HEAP_BASE + kernel_heap_size();
     if (!mgr) return 0;
     uint32_t count = VF(uint32_t, mgr, 0x28);
@@ -360,7 +368,7 @@ void framepace_presented(uint64_t t, bool on_grid) {
     g_grid_streak = on_grid ? g_grid_streak + 1 : 0;
     static int fixed = -1;
     if (fixed < 0) fixed = env_int("SAVAGEWIND_NO_CONTROLLER_STEP", 0);
-    if (!fixed) *(float *)(uintptr_t)CONTROLLER_STEP = g_step * menu_speed_mult();
+    if (!fixed && CONTROLLER_STEP) *(float *)(uintptr_t)CONTROLLER_STEP = g_step * menu_speed_mult();
 }
 
 // The menus' speed: every frame the game sets a GUI speed to its integer interval x 0.5: 1 at 30 fps, 0.5 at 60, and

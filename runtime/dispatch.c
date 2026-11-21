@@ -153,8 +153,12 @@ static GuestFn dispatch_slow(Cpu *c) {
     GuestFn f = dispatch_lookup(pc);
     if (!f) {
         uint64_t off;
-        const char *s = loader_symbol_at(c->x[30], &off);
-        FATAL("no function at %llx (lr=%llx %s+%llx)\n", pc, c->x[30], s ? s : "?", off);
+        const char *s = loader_symbol_at(pc, &off);
+        if (s && off == 0) f = hle_lookup_impl(s);
+        if (!f) {
+            s = loader_symbol_at(c->x[30], &off);
+            FATAL("no function at %llx (lr=%llx %s+%llx)\n", pc, c->x[30], s ? s : "?", off);
+        }
     }
     unsigned h = (unsigned)(pc >> 2) & (DCACHE - 1);
     dcache[h].addr = pc;

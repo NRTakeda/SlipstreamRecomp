@@ -45,7 +45,10 @@ MAIN_BASE = 0x7000000000  # (tools/layout.py: main is the first module)
 Version = namedtuple('Version', 'name build_id supported')
 VERSIONS = [
     Version('1.9.0', 'cd57b23fa4bbad65', True),  # (2026-02-17: Thai text on Switch 2; SDK 21.4.1)
+    Version('4.0.1', '158c0c7399aabd7b', True),  # (MK8DX 4.0.1 spike: no BotW sites or patches)
 ]
+NON_BOTW_VERSIONS = {'4.0.1'}
+NON_BOTW_BUILDS = {'158c0c7399aabd7b'}
 
 Site = namedtuple('Site', 'name kind pattern at')
 BLADE_BUFFERS = '910e0135 b85fc3a9 7103fd1f 52800f18 12001d36 52801fe9 1a893108'
@@ -1012,6 +1015,11 @@ def for_module(nso, base, allow_unsupported=False, log=None):
     """(version name, sites) for the main module nso at base. Refuses a build that VERSIONS doesn't support, unless
     allow_unsupported (bringing up a new version: its sites must then all be found by pattern)."""
     v = supported_version(nso.build_id)
+    if (v and v.name in NON_BOTW_VERSIONS) or nso.build_id[:16] in NON_BOTW_BUILDS:
+        name = v.name if v else nso.build_id[:16]
+        if log:
+            log(f'game_sites: main module build {nso.build_id[:16]} ({name}): non-BotW game, sites left empty')
+        return name, {}
     if not v or not v.supported:
         what = f'version {v.name}, not supported yet' if v else 'not a version Savage Wind knows'
         if not allow_unsupported:

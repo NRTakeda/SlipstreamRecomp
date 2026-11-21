@@ -170,6 +170,22 @@ static const Font *font_for(uint64_t type) {
     return &fonts[0];
 }
 
+HLE_FUNC("_ZN2nn2pl21RequestSharedFontLoadENS0_14SharedFontTypeE", pl_request_load) { (void)c; }
 HLE_FUNC("_ZN2nn2pl22GetSharedFontLoadStateENS0_14SharedFontTypeE", pl_get_load_state) { c->x[0] = 1; }
 HLE_FUNC("_ZN2nn2pl20GetSharedFontAddressENS0_14SharedFontTypeE", pl_get_address) { c->x[0] = font_for(c->x[0])->addr; }
 HLE_FUNC("_ZN2nn2pl17GetSharedFontSizeENS0_14SharedFontTypeE", pl_get_size) { c->x[0] = font_for(c->x[0])->size; }
+HLE_FUNC("_ZN2nn2pl13GetSharedFontEPiPNS0_14SharedFontDataEiNS_8settings12LanguageCodeE", pl_get_shared_font) {
+    int32_t *out_count = (int32_t *)(uintptr_t)c->x[0];
+    uint8_t *out_data = (uint8_t *)(uintptr_t)c->x[1];
+    int32_t max_data = (int32_t)c->x[2];
+    static const uint32_t order[6] = {0, 1, 2, 3, 4, 5};
+    int32_t n = max_data < 6 ? (max_data < 0 ? 0 : max_data) : 6;
+    if (out_count) *out_count = 6;
+    for (int32_t i = 0; i < n && out_data; i++) {
+        const Font *f = font_for(order[i]);
+        *(uint32_t *)(out_data + i * 0x18 + 0x00) = order[i];
+        *(uint64_t *)(out_data + i * 0x18 + 0x08) = f->addr;
+        *(uint64_t *)(out_data + i * 0x18 + 0x10) = f->size;
+    }
+    c->x[0] = 1;
+}

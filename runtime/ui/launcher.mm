@@ -270,7 +270,7 @@ static std::string check_copied_files(const std::string &root) {
         return v ? NOT_SUPPORTED_YET : NOT_SUPPORTED;
     }
     if (!is_dir(root + "/romfs")) return "Game data missing";
-    if (!movies_complete(root + "/romfs")) return "Game files incomplete";
+    if (id != "158c0c7399aabd7b" && !movies_complete(root + "/romfs")) return "Game files incomplete";
     return "";
 }
 

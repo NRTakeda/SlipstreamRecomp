@@ -151,6 +151,7 @@ static void start_round(uint64_t frame, bool first) {
 }
 
 void control_tp_frame(uint64_t frame) {
+    if (!rt_is_botw()) return;
     extern bool control_tp_poll_ui(uint64_t frame);
     control_tp_poll_ui(frame);
     const float *pp = pinfo_pos();
