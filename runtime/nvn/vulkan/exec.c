@@ -8563,6 +8563,13 @@ static void hdr_record_copy(NvnTexture *sn, NvnTexture *dn) {
 
 static void draw_(CmdRec *r, bool indexed);
 static uint64_t stat_discarded;
+// MK8's character colour vertex shader does not reproduce the exact depth of its depth-only shader on Vulkan.
+// Let the colour draw establish its own depth; otherwise the EQUAL test leaves blue holes in Mario's studio model.
+// The separate menu-floor draw also paints over the title art and the front of the menu scene.
+#define MK8_CHARACTER_DEPTH_FS UINT64_C(0xf832ba9b56f257be)
+#define MK8_CHARACTER_COLOR_FS UINT64_C(0x862e40e0eca0d431)
+#define MK8_MENU_FLOOR_FS UINT64_C(0x121eb809e5d8de6d)
+
 static void draw(CmdRec *r, bool indexed) {
     // Rasterizer discard: the primitives stop before rasterization, so nothing reaches the targets, depth, stencil or
     // occlusion queries. Its only output in NVN is transform feedback, which isn't implemented (cmdbuf.c), so the draw
@@ -8709,6 +8716,10 @@ static void draw_(CmdRec *r, bool indexed) {
         }
         extern volatile int g_skip_fs_off;
         if (last_skip && !g_skip_fs_off) { stat_skipped++; return; }
+        if (!rt_is_botw() && (last_hash == MK8_CHARACTER_DEPTH_FS || last_hash == MK8_MENU_FLOOR_FS)) {
+            stat_skipped++;
+            return;
+        }
         if (freecam_hud_drop(pr, r)) { stat_skipped++; return; }
         if (g_debug_frame && getenv("SAVAGEWIND_LOG_FSHASH")) LOG("[fshash] fs=%llx hash %016llx\n", (unsigned long long)fs, (unsigned long long)last_hash);
         g_cur_fs_hash = last_hash;
@@ -9118,8 +9129,11 @@ have_pipe:
     if (nodt < 0) nodt = getenv("SAVAGEWIND_NO_DEPTH_TEST") != NULL;
     bool dt = st.ds[0] && !nodt && pass_depth;
     if (!DYN_SAME(dt, (uint32_t)dt)) rec_CmdSetDepthTestEnable(cb, dt);
-    if (!DYN_SAME(dw, (uint32_t)(dt && st.ds[1]))) rec_CmdSetDepthWriteEnable(cb, dt && st.ds[1]);
     VkCompareOp dop = dt ? compare_fn(st.ds[2]) : VK_COMPARE_OP_ALWAYS;
+    bool mk8_character_color = !rt_is_botw() && dop == VK_COMPARE_OP_EQUAL && g_cur_fs_hash == MK8_CHARACTER_COLOR_FS;
+    bool dw = dt && (st.ds[1] || mk8_character_color);
+    if (!DYN_SAME(dw, (uint32_t)dw)) rec_CmdSetDepthWriteEnable(cb, dw);
+    if (mk8_character_color) dop = VK_COMPARE_OP_LESS_OR_EQUAL;
     // EQUAL against a depth pre-pass written by a different vertex shader (foliage, trees) needs both shaders to land
     // on identical depths. They do since the translator stopped using unpackHalf2x16 (NVIDIA ran the half math after
     // it in fp16, differently per shader: black slashes in foliage). SAVAGEWIND_VK_EQUAL_TOL=1 brings back the old
