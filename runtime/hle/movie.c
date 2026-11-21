@@ -451,6 +451,7 @@ typedef struct {
     int fps;       // a video's frame rate (its file's)
     int64_t clock_ns, clock_us;  // pacing: when the frame of time clock_us was handed out (0: not yet)
     int signalling;  // dec_signal calls between their check and the end of the game's SignalEvent (see dec_signal)
+    int64_t last_output_us;  // last video PTS: menu previews seek between distant segments of one file
     pthread_mutex_t lock;
     pthread_cond_t pace_cv, sig_cv;
 } Decoder;
@@ -578,6 +579,7 @@ static void dec_start(Cpu *c) {
     if (d->video && !d->playing) {
         d->playing = true;
         d->clock_ns = 0;
+        d->last_output_us = AV_NOPTS_VALUE;
         g_movie_fps = d->fps > 0 ? d->fps : 30;
         __atomic_add_fetch(&g_movie_playing, 1, __ATOMIC_RELAXED);
     }
@@ -777,6 +779,13 @@ static void dec_acquire_output(Cpu *c) {
         // doesn't signal again.) Late by more than a frame or two (a hitch): the clock moves on to the picture
         // instead of rushing through the ones after it.
         int64_t now = av_gettime_relative() * 1000;
+        if (d->last_output_us != AV_NOPTS_VALUE &&
+            (r.time - d->last_output_us > 5000000 || r.time - d->last_output_us < -5000000)) {
+            LOG("[movie] timestamp jump %lld -> %lld us: pacing clock reset\n",
+                (long long)d->last_output_us, (long long)r.time);
+            d->clock_ns = now;
+            d->clock_us = r.time;
+        }
         if (!d->clock_ns) d->clock_ns = now, d->clock_us = r.time;
         int64_t due = d->clock_ns + (r.time - d->clock_us) * 1000;
         if (now < due) {
@@ -803,6 +812,7 @@ static void dec_acquire_output(Cpu *c) {
         } else if (now - due > 100000000) d->clock_ns = now, d->clock_us = r.time;
     }
     memmove(d->ready, d->ready + 1, --d->nready * sizeof *d->ready);
+    if (d->video && !(r.flags & MOVIE_EOS)) d->last_output_us = r.time;
     int remaining = d->nready;
     pthread_mutex_unlock(&d->lock);
     *(int32_t *)(uintptr_t)c->x[1] = r.idx;
