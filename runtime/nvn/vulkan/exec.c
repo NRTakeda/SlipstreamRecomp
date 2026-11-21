@@ -8570,6 +8570,7 @@ static uint64_t stat_discarded;
 #define MK8_CHARACTER_DEPTH_FS UINT64_C(0xf832ba9b56f257be)
 #define MK8_CHARACTER_COLOR_FS UINT64_C(0x862e40e0eca0d431)
 #define MK8_MENU_FLOOR_FS UINT64_C(0x121eb809e5d8de6d)
+#define MK8_STUDIO_SHADOW_FS UINT64_C(0xb8e5e504b7189dfd)
 
 static void draw(CmdRec *r, bool indexed) {
     // Rasterizer discard: the primitives stop before rasterization, so nothing reaches the targets, depth, stencil or
@@ -9146,7 +9147,10 @@ have_pipe:
     // plants stuck flat on them (beach) - so it is off.
     static int tol = -1;
     if (tol < 0) tol = getenv("SAVAGEWIND_VK_EQUAL_TOL") != NULL;
-    bool equal_tol = dop == VK_COMPARE_OP_EQUAL && tol;
+    // The MK8 studio contact shadow's colour and depth-only vertex shaders disagree by a few depth ulps.
+    // A narrow bias fills the radial gaps without changing the racing scene or BOTW's EQUAL draws.
+    bool equal_tol = dop == VK_COMPARE_OP_EQUAL &&
+        (tol || (!rt_is_botw() && g_cur_fs_hash == MK8_STUDIO_SHADOW_FS));
     if (equal_tol) dop = VK_COMPARE_OP_LESS_OR_EQUAL;
     if (!DYN_SAME(dop, (uint32_t)dop)) rec_CmdSetDepthCompareOp(cb, dop);
     bool sten = st.ds[3] && pass_stencil;
