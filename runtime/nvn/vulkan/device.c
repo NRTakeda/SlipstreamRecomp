@@ -16,6 +16,7 @@
 
 #include "../../framepace.h"
 #include "../../hash.h"
+#include "../../game_sites.h"
 #include "../../imageload.h"
 #include "../../paths.h"
 #include "../../platform.h"
@@ -3235,10 +3236,10 @@ static void present_locked(NvnTexture *t) {
         OutScale os;
         int iw, ih;
         if (winsize_virtual(&iw, &ih) && (iw != (int)dw || ih != (int)dh)) {
-            output_scale(iw, ih, g_settings.wide_view, &os);
+            output_scale(iw, ih, g_settings.wide_view && rt_is_botw(), &os);
             output_scale_screen(dw, dh, iw, ih, &os);
         } else {
-            output_scale(dw, dh, g_settings.wide_view, &os);
+            output_scale(dw, dh, g_settings.wide_view && rt_is_botw(), &os);
         }
         double sx = os.sx, sy = os.sy, vx = os.vx, vy = os.vy, vw = os.vw, vh = os.vh;
         float crop[4] = {(float)os.crop[0], (float)os.crop[1], (float)os.crop[2], (float)os.crop[3]};  // (uv origin, size)
