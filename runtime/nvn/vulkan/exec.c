@@ -8565,7 +8565,8 @@ static void draw_(CmdRec *r, bool indexed);
 static uint64_t stat_discarded;
 // MK8's character colour vertex shader does not reproduce the exact depth of its depth-only shader on Vulkan.
 // Let the colour draw establish its own depth; otherwise the EQUAL test leaves blue holes in Mario's studio model.
-// The separate menu-floor draw also paints over the title art and the front of the menu scene.
+// The studio floor is present in the command lists even on the title and main menu, where no studio model is drawn.
+// Its depth-only pass writes the values that make its colour pass pass EQUAL, so depth alone cannot hide it there.
 #define MK8_CHARACTER_DEPTH_FS UINT64_C(0xf832ba9b56f257be)
 #define MK8_CHARACTER_COLOR_FS UINT64_C(0x862e40e0eca0d431)
 #define MK8_MENU_FLOOR_FS UINT64_C(0x121eb809e5d8de6d)
@@ -8716,7 +8717,11 @@ static void draw_(CmdRec *r, bool indexed) {
         }
         extern volatile int g_skip_fs_off;
         if (last_skip && !g_skip_fs_off) { stat_skipped++; return; }
-        if (!rt_is_botw() && (last_hash == MK8_CHARACTER_DEPTH_FS || last_hash == MK8_MENU_FLOOR_FS)) {
+        static uint64_t mk8_model_frame = UINT64_MAX;
+        uint64_t frame = renderer_present_count();
+        if (!rt_is_botw() && last_hash == MK8_CHARACTER_COLOR_FS) mk8_model_frame = frame;
+        if (!rt_is_botw() && (last_hash == MK8_CHARACTER_DEPTH_FS ||
+            (last_hash == MK8_MENU_FLOOR_FS && mk8_model_frame != frame))) {
             stat_skipped++;
             return;
         }
