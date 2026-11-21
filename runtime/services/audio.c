@@ -9,6 +9,7 @@
 #include <SDL3/SDL.h>
 
 #include "../hle.h"
+#include "../game_sites.h"
 #include "../settings.h"
 #include "../audio_mix.h"
 #include "../input_bind.h"
@@ -1313,10 +1314,50 @@ static void sdk_sensor_volume(uint64_t list) {
     }
 }
 
+// MK8's older ADPCM data-source command can leave its selected wave-buffer slot marked active after the buffer
+// address and size have been cleared. The SDK's GetAdpcmData then asks DecodeAdpcm for the remaining samples,
+// gets zero, and retries that same slot forever while holding the renderer's update lock.
+static void sdk_mk8_guard_adpcm(uint64_t list) {
+    if (rt_is_botw() || !in_guest(list, 0x20)) return;
+    uint32_t total = *(const uint32_t *)(uintptr_t)list;
+    uint32_t count = *(const uint32_t *)(uintptr_t)(list + 4);
+    if (total < 0x20 || !in_guest(list, total)) return;
+    uint64_t cmd = list + 0x20, end = list + total;
+    for (uint32_t i = 0; i < count && i < 1024 && cmd + 8 <= end; i++) {
+        const uint8_t *p = (const uint8_t *)(uintptr_t)cmd;
+        if (*(const uint32_t *)p != 0xcafebabe) break;
+        uint16_t size;
+        memcpy(&size, p + 4, sizeof size);
+        if (size < 8 || size > end - cmd) break;
+        if (p[6] == 2 && size == 0xd0) {
+            uint64_t state;
+            memcpy(&state, p + 0xbc, sizeof state);
+            if (in_guest(state, 0x14)) {
+                uint32_t index = *(const uint32_t *)(uintptr_t)(state + 0xc);
+                if (index < 4) {
+                    uint8_t *active = (uint8_t *)(uintptr_t)(state + 0x10 + index);
+                    const uint8_t *wave = p + 0x1c + index * 0x28;
+                    uint64_t data;
+                    uint32_t bytes;
+                    memcpy(&data, wave, sizeof data);
+                    memcpy(&bytes, wave + 8, sizeof bytes);
+                    if (*active && (!data || !bytes || !in_guest(data, bytes))) {
+                        *active = 0;
+                        static int logged;
+                        if (logged++ < 8) LOG("[audren-sdk] skipped active ADPCM slot without valid data (index %u)\n", index);
+                    }
+                }
+            }
+        }
+        cmd += size;
+    }
+}
+
 // Hook on nn::audio::dsp::CommandListProcessor::Process (x0: the processor, whose +0x00 is its command list).
 static void sdk_process(Cpu *c) {
     uint64_t list = *(const uint64_t *)(uintptr_t)c->x[0], lr = c->x[30];
     sdk_sensor_volume(list);
+    sdk_mk8_guard_adpcm(list);
     g_sdk_process(c);
     c->x[30] = lr;
     sdk_take_sink(&g_sdkren, list);
