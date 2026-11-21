@@ -83,7 +83,11 @@ NVN(nvnDeviceGetSeparateSamplerHandle) { RET((A(1) & 0xFFF) << 20); }
 NVN(nvnDeviceInstallDebugCallback) { (void)c; }
 NVN(nvnDeviceGenerateDebugDomainId) { RET(1); }
 static uint32_t window_origin, depth_mode;
-RT_ON_RESET(nvn_device_reset) { window_origin = depth_mode = 0; }  // (the next boot sets its own)
+RT_ON_RESET(nvn_device_reset) {  // (the next boot sets its own)
+    window_origin = 0;
+    const char *e = getenv("SAVAGEWIND_DEPTH_MODE");  // experiment: start in this depth mode (0 GL -1..1, 1 zero to one)
+    depth_mode = e ? (uint32_t)atoi(e) : 0;
+}
 NVN(nvnDeviceSetWindowOriginMode) { window_origin = (uint32_t)A(1); LOG("[nvn] window origin mode %u\n", window_origin); }
 uint32_t nvn_window_origin(void) { return window_origin; }
 uint32_t nvn_depth_mode(void) { return depth_mode; }

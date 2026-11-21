@@ -51,6 +51,7 @@ typedef struct {
     uint32_t restart_index;
     bool depth_clamp;
     bool rasterizer_discard;  // nvnCommandBufferSetRasterizerDiscard: draw() skips draws (no transform feedback here)
+    bool render_off;          // nvnCommandBufferSetRenderEnable(false) or a failed SetRenderEnableConditional: draw() skips
     uint64_t copy_row_stride, copy_image_stride;
 } ExecState;
 

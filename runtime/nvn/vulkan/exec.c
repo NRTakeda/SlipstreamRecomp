@@ -8567,7 +8567,7 @@ static void draw(CmdRec *r, bool indexed) {
     // Rasterizer discard: the primitives stop before rasterization, so nothing reaches the targets, depth, stencil or
     // occlusion queries. Its only output in NVN is transform feedback, which isn't implemented (cmdbuf.c), so the draw
     // has nothing left to do (a vertex shader writing storage buffers or images would be the one difference).
-    if (st.rasterizer_discard) { stat_discarded++; return; }
+    if (st.rasterizer_discard || st.render_off) { stat_discarded++; return; }
     PROFD_T0();
     SW_ACC("exec/draw");
     draw_(r, indexed);
@@ -12065,6 +12065,33 @@ static void exec_list(uint64_t handle, int depth) {
                     (unsigned long long)renderer_present_count(), (unsigned long long)stat_discarded);
             }
             st.rasterizer_discard = r->x[0] != 0;
+            break;
+        }
+        case CMD_SET_RENDER_ENABLE:
+        case CMD_SET_RENDER_ENABLE_COND: {
+            // SetRenderEnable(enable), or SetRenderEnableConditional(mode, counters): render only if the two 64-bit
+            // counter values at counters and counters + 16 are equal (mode 0) or not equal (mode 1), as the
+            // GPU compares them. SAVAGEWIND_NO_RENDER_ENABLE=1: ignore both (always render, as before).
+            static int ignore = -1;
+            if (ignore < 0) ignore = getenv("SAVAGEWIND_NO_RENDER_ENABLE") != NULL;
+            bool on = true;
+            uint64_t a = 0, b = 0;
+            if (r->op == CMD_SET_RENDER_ENABLE) on = (r->x[0] & 1) != 0;
+            else if (r->x[1] >= GUEST_LO && r->x[1] + 32 <= GUEST_HI) {
+                a = *(volatile const uint64_t *)(uintptr_t)r->x[1];
+                b = *(volatile const uint64_t *)(uintptr_t)(r->x[1] + 16);
+                on = (r->x[0] == 0) ? a == b : a != b;
+            }
+            static int seen;
+            if (seen < 24) {
+                seen++;
+                LOG("[nvn] %s mode/arg %llu addr %llx a %llu b %llu -> %s (frame %llu)\n",
+                    r->op == CMD_SET_RENDER_ENABLE ? "SetRenderEnable" : "SetRenderEnableConditional",
+                    (unsigned long long)r->x[0], (unsigned long long)(r->op == CMD_SET_RENDER_ENABLE ? 0 : r->x[1]),
+                    (unsigned long long)a, (unsigned long long)b, on ? "render" : "skip",
+                    (unsigned long long)renderer_present_count());
+            }
+            st.render_off = !ignore && !on;
             break;
         }
         case CMD_SET_POLYGON_OFFSET: memcpy(st.poly_offset, r->f, sizeof st.poly_offset); break;

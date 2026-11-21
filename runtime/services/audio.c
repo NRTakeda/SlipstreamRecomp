@@ -1123,6 +1123,7 @@ typedef struct {
     bool signal;                 // a frame was rendered: the event thread signals the game's event (g_sdk_lock)
     bool pulled;                 // the device took data from the stream since the render thread looked (g_sdk_lock)
     uint64_t renderer, context;  // the game's AudioRendererHandle
+    uint64_t event;              // the os::SystemEvent the game gave OpenAudioRenderer (x1)
     uint32_t rate, samples;      // AudioRendererParameter +0x00, +0x04
     uint32_t stream_ch, out_ch;
     SDL_AudioStream *stream;
@@ -1200,16 +1201,27 @@ static void sdk_take_sink(SdkRen *r, uint64_t list) {
     uint32_t count = *(const uint32_t *)(uintptr_t)(list + 4), n = *(const uint32_t *)(uintptr_t)(list + 0x14);
     if (!n || n > 1024) return;
     uint64_t cmd = list + 0x20;
+    // Older sdks (MK8DX 4.0.1): each command starts with 0xCAFEBABE, then u16 size and u8 type; the device sink is
+    // type 15 (0x130 bytes) with the same fields 0x10 earlier: +0x118 buffers, +0x120 input count, +0x124 indices.
+    bool old_layout = in_guest(cmd, 8) && *(const uint32_t *)(uintptr_t)cmd == 0xcafebabe;
     for (uint32_t i = 0; i < count && in_guest(cmd, 8); i++) {
         const uint8_t *p = (const uint8_t *)(uintptr_t)cmd;
-        int16_t size = *(const int16_t *)(p + 6);
-        if (p[5] == 0x14 && (p[4] & 1) && in_guest(cmd, 0x148)) {
+        int16_t size = old_layout ? *(const int16_t *)(p + 4) : *(const int16_t *)(p + 6);
+        bool sink = old_layout ? (p[6] == 0x0f && size == 0x130 && in_guest(cmd, 0x130))
+                               : (p[5] == 0x14 && (p[4] & 1) && in_guest(cmd, 0x148));
+        if (sink) {
+            if (old_layout) p -= 0x10;  // (so the offsets below land on the older fields)
             uint64_t buf = *(const uint64_t *)(p + 0x128);
             uint32_t inputs = *(const uint32_t *)(p + 0x130);
             if (inputs > 6) inputs = 6;
+            static int sink_logged;
+            if (sink_logged++ < 2)
+                LOG("[audren-sdk] device sink (%s layout): buffers %llx, %u inputs, first indices %d %d\n",
+                    old_layout ? "older" : "botw", (unsigned long long)buf, inputs,
+                    old_layout ? p[0x134] : *(const int16_t *)(p + 0x134), old_layout ? p[0x135] : *(const int16_t *)(p + 0x136));
             const int32_t *ch[6] = {0};
             for (uint32_t k = 0; k < inputs; k++) {
-                int16_t idx = *(const int16_t *)(p + 0x134 + 2 * k);
+                int16_t idx = old_layout ? (int16_t)p[0x134 + k] : *(const int16_t *)(p + 0x134 + 2 * k);  // (u8 there)
                 uint64_t a = buf + (uint64_t)idx * n * 4;
                 if (idx >= 0 && in_guest(a, (uint64_t)n * 4)) ch[k] = (const int32_t *)(uintptr_t)a;
             }
@@ -1223,6 +1235,43 @@ static void sdk_take_sink(SdkRen *r, uint64_t list) {
         }
         if (size <= 0) break;
         cmd += (uint64_t)size;
+    }
+    static int dumped;  // (no device sink found: the first lists' commands, to map another sdk's layout)
+    if (dumped < 3 && getenv("SAVAGEWIND_AUDIO_LOG")) {
+        dumped++;
+        char line[1600]; int o = snprintf(line, sizeof line, "[audren-sdk] list %llx: %u commands, %u samples:",
+                                          (unsigned long long)list, count, n);
+        uint64_t c2 = list + 0x20;
+        for (uint32_t i = 0; i < count && i < 96 && in_guest(c2, 8) && o < (int)sizeof line - 24; i++) {
+            const uint8_t *q = (const uint8_t *)(uintptr_t)c2;
+            int16_t sz = *(const int16_t *)(q + 6);
+            o += snprintf(line + o, sizeof line - o, " %x/%x%s", q[5], (unsigned)(uint16_t)sz, (q[4] & 1) ? "" : "-");
+            if (sz <= 0) break;
+            c2 += (uint64_t)sz;
+        }
+        LOG("%s\n", line);
+        if (dumped == 1 && in_guest(list, 0x20)) {  // older layout: 0xCAFEBABE, u16 size, u8 type, then the body
+            uint32_t total = *(const uint32_t *)(uintptr_t)list;
+            uint64_t q2 = list + 0x20;
+            for (uint32_t i = 0; i < count && q2 < list + total && in_guest(q2, 8); i++) {
+                const uint8_t *q = (const uint8_t *)(uintptr_t)q2;
+                uint16_t sz = *(const uint16_t *)(q + 4);
+                char hx[700]; int k = 0;
+                for (int j = 0; j < sz && j < 0x100 && in_guest(q2 + j, 1); j++)
+                    k += snprintf(hx + k, sizeof hx - k, "%02x%s", q[j], (j & 3) == 3 ? " " : "");
+                if (q[6] != 6) LOG("[audren-sdk]   cmd %u type %u size %#x: %s\n", i, q[6], sz, hx);
+                if (*(const uint32_t *)q != 0xcafebabe || !sz) break;
+                q2 += sz;
+            }
+        }
+        if (0) {
+            for (int row = 0; row < 24; row++) {
+                char hx[200]; int k = 0;
+                const uint8_t *q = (const uint8_t *)(uintptr_t)(list + row * 32);
+                for (int j = 0; j < 32; j++) k += snprintf(hx + k, sizeof hx - k, "%02x%s", q[j], (j & 3) == 3 ? " " : "");
+                LOG("[audren-sdk]   +%03x %s\n", row * 32, hx);
+            }
+        }
     }
 }
 
@@ -1289,7 +1338,9 @@ static void sdk_render_thread(Cpu *c) {
     uint64_t exec = loader_find_symbol("_ZN2nn5audio6server17AudioRenderSystem29ExecuteAudioRendererRenderingEv");
     bool impl_exec = false;
     if (!exec) {
-        exec = guest_sym("_ZN2nn5audio6server24AudioRendererManagerImpl17AudioRendererImpl29ExecuteAudioRendererRenderingEv");
+        // Other sdks (MK8DX 4.0.1): no AudioRenderSystem symbol. The public client call takes the game's own
+        // AudioRendererHandle (x0, x1) and does the server's locking itself, so no mutex and no started check here.
+        exec = guest_sym("_ZN2nn5audio29ExecuteAudioRendererRenderingENS0_19AudioRendererHandleE");
         impl_exec = true;
     }
     uint64_t lock = guest_sym("_ZN2nn2os12SdkMutexType4LockEv");
@@ -1301,8 +1352,7 @@ static void sdk_render_thread(Cpu *c) {
     kernel_thread_off_cores();       // (the DSP's work: beside the game's cores, not waiting for one)
     plat_thread_realtime(frame_ns);  // (the host thread under it: ahead of the game's when the CPU is busy)
     while (r->open) {
-        bool not_started = impl_exec ? (*(volatile const uint8_t *)(uintptr_t)(r->renderer + 0x70) == 0)
-                                     : (*(volatile const uint32_t *)(uintptr_t)(r->context + 0x14) != 0);
+        bool not_started = !impl_exec && *(volatile const uint32_t *)(uintptr_t)(r->context + 0x14) != 0;
         if (not_started) {  // not started (StartAudioRenderer clears it / sets +0x70)
             sdk_sleep(c, 5000000);
             next = plat_now_ns();
@@ -1328,17 +1378,19 @@ static void sdk_render_thread(Cpu *c) {
             if (now - next > 100000000) next = now;  // (more than 100 ms late: don't catch up)
             next += frame_ns;
         }
-        uint64_t mutex = impl_exec ? (r->renderer + 0x60 + 0x1d0) : (r->renderer + 0x70 + 0x2d0), t0 = plat_now_ns();
-        c->x[0] = mutex;
-        guest_call(c, lock);
+        uint64_t mutex = r->renderer + 0x70 + 0x2d0, t0 = plat_now_ns();
+        if (!impl_exec) { c->x[0] = mutex; guest_call(c, lock); }
         uint64_t t1 = plat_now_ns();
         r->out_n = 0;
         if (r->open) {
-            c->x[0] = impl_exec ? r->renderer : (r->renderer + 0x70);
+            if (impl_exec) { c->x[0] = r->renderer; c->x[1] = r->context; }
+            else c->x[0] = r->renderer + 0x70;
             guest_call(c, exec);
+            static int logged;
+            if (impl_exec && logged++ < 3) LOG("[audren-sdk] ExecuteAudioRendererRendering(%llx, %llx) -> %x\n",
+                                               (unsigned long long)r->renderer, (unsigned long long)r->context, (unsigned)c->x[0]);
         }
-        c->x[0] = mutex;
-        guest_call(c, unlock);
+        if (!impl_exec) { c->x[0] = mutex; guest_call(c, unlock); }
         uint64_t t2 = plat_now_ns();
         pthread_mutex_lock(&g_sdk_lock);
         r->signal = true;
@@ -1382,7 +1434,7 @@ static void sdk_event_thread(Cpu *c) {
     kernel_thread_off_cores();
     while (r->open) {
         if (!sdk_wait(&g_sdk_frame_cv, &r->signal, 50000000)) continue;
-        c->x[0] = impl_exec ? r->context : *(const uint64_t *)(uintptr_t)r->context;  // the event OpenAudioRenderer made (manual execution)
+        c->x[0] = impl_exec ? r->event : *(const uint64_t *)(uintptr_t)r->context;  // the event OpenAudioRenderer got (manual execution)
         guest_call(c, sig);
     }
     r->threads--;
@@ -1438,7 +1490,7 @@ HLE_FUNC("_ZN2nn5audio32InitializeAudioRendererParameterEPNS0_22AudioRendererPar
 // OpenAudioRenderer(handle *, os::SystemEvent *, const AudioRendererParameter &, void *work, size_t size)
 HLE_FUNC("_ZN2nn5audio17OpenAudioRendererEPNS0_19AudioRendererHandleEPNS_2os11SystemEventERKNS0_22AudioRendererParameterEPvm",
          hle_audren_open) {
-    uint64_t h = c->x[0], p = c->x[2], size = c->x[4];
+    uint64_t h = c->x[0], ev = c->x[1], p = c->x[2], size = c->x[4];
     SDK_AUDIO_CALL("_ZN2nn5audio17OpenAudioRendererEPNS0_19AudioRendererHandleEPNS_2os11SystemEventERKNS0_22AudioRendererParameterEPvm");
     const uint32_t *pp = (const uint32_t *)(uintptr_t)p;
     uint32_t res = (uint32_t)c->x[0];
@@ -1458,6 +1510,7 @@ HLE_FUNC("_ZN2nn5audio17OpenAudioRendererEPNS0_19AudioRendererHandleEPNS_2os11Sy
     }
     r->renderer = *(const uint64_t *)(uintptr_t)h;
     r->context = *(const uint64_t *)(uintptr_t)(h + 8);
+    r->event = ev;
     r->rate = pp[0];
     r->samples = pp[1];
     if (!r->stream && !r->wav) {
