@@ -1143,6 +1143,29 @@ static SdkRen g_sdkren;
 static pthread_mutex_t g_sdk_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t g_sdk_frame_cv = PTHREAD_COND_INITIALIZER, g_sdk_pull_cv = PTHREAD_COND_INITIALIZER;
 static GuestFn g_sdk_process;  // the recompiled CommandListProcessor::Process, under our hook
+static GuestFn g_sdk_impl_exec;  // older sdks: AudioRendererImpl::ExecuteAudioRendererRendering, under our lock
+
+// Older sdks (MK8DX 4.0.1): AudioRenderSystem::Update (the game's RequestUpdate) takes os::LockMutex on the system's
+// mutex (system +0x1d0, the system at AudioRendererImpl +0x60), but AudioRendererImpl::ExecuteAudioRendererRendering
+// doesn't: without the lock our render thread generated commands while the game changed voices, and the voices'
+// state broke (silence, then the sdk's ADPCM loop spinning). Same idea as the AudioRenderSystem +0x2d0 lock above.
+static void sdk_impl_exec_locked(Cpu *c) {
+    uint64_t impl = c->x[0], lr = c->x[30], mutex = impl + 0x60 + 0x1d0;
+    static uint64_t lock, unlock;
+    if (!lock) {
+        lock = guest_sym("_ZN2nn2os9LockMutexEPNS0_9MutexTypeE");
+        unlock = guest_sym("_ZN2nn2os11UnlockMutexEPNS0_9MutexTypeE");
+    }
+    c->x[0] = mutex;
+    guest_call(c, lock);
+    c->x[0] = impl;
+    g_sdk_impl_exec(c);
+    uint64_t ret = c->x[0];
+    c->x[0] = mutex;
+    guest_call(c, unlock);
+    c->x[0] = ret;
+    c->x[30] = lr;
+}
 static _Atomic uint32_t g_sdk_short;  // device requests the stream couldn't fill: underruns (SAVAGEWIND_AUDIO_LOG)
 
 // SDL calls this with the stream locked, before the device's read: the render thread, woken here, sees the queue
@@ -1548,6 +1571,17 @@ HLE_FUNC("_ZN2nn5audio17OpenAudioRendererEPNS0_19AudioRendererHandleEPNS_2os11Sy
         if (!g_sdk_process) FATAL("[audren-sdk] CommandListProcessor::Process %llx isn't recompiled\n", proc);
         hle_override(proc, sdk_process, "CommandListProcessor::Process");
         hooked = proc;
+    }
+    if (!loader_find_symbol("_ZN2nn5audio6server17AudioRenderSystem29ExecuteAudioRendererRenderingEv")) {
+        uint64_t ie = guest_sym("_ZN2nn5audio6server24AudioRendererManagerImpl17AudioRendererImpl29ExecuteAudioRendererRenderingEv");
+        static uint64_t ie_hooked;
+        if (ie && ie_hooked != ie) {
+            g_sdk_impl_exec = dispatch_lookup(ie);
+            if (!g_sdk_impl_exec) FATAL("[audren-sdk] AudioRendererImpl::ExecuteAudioRendererRendering %llx isn't recompiled\n", ie);
+            hle_override(ie, sdk_impl_exec_locked, "AudioRendererImpl::ExecuteAudioRendererRendering (locked)");
+            ie_hooked = ie;
+            LOG("[audren-sdk] older sdk: rendering under the system's mutex (AudioRendererImpl +0x60 +0x1d0)\n");
+        }
     }
     r->renderer = *(const uint64_t *)(uintptr_t)h;
     r->context = *(const uint64_t *)(uintptr_t)(h + 8);
