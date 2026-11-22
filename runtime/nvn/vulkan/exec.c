@@ -9570,11 +9570,32 @@ static void debug_draw(Prog *pr, CmdRec *r, bool indexed) {
             LOG(" | bf%d %x %x %x %x %x %x", i, st.blend[i][1], st.blend[i][2], st.blend[i][3], st.blend[i][4], st.blend[i][5], st.blend[i][6]);
     LOG(" | fs out %#x | poly3 %#x offset %g %g %g | clamp %d\n", pr->fi->out_mask, st.poly[3], st.poly_offset[0], st.poly_offset[1],
         st.poly_offset[2], st.depth_clamp);
+    // the game's constant buffers of each stage: range, hash of the vertex stage's (what the GPU reads, as recorded),
+    // the first vec4 of the material blocks (vertex: cb3 camera and cb7 bone palettes left out, fragment: cb3)
+    for (int stage = 0; stage < 2; stage++) {
+        const ShaderInfo *si = stage ? pr->fi : pr->vi;
+        for (uint32_t m = (uint32_t)(si->cbuf_mask >> 3) & 0x3FFF; m; m &= m - 1) {
+            int k = 3 + __builtin_ctz(m);
+            Range u = st.ubuf[stage][k - 3];
+            uint64_t h = 0xcbf29ce484222325ull, n = u.size < 0x10000 ? u.size : 0x10000;
+            for (uint64_t j = 0; !stage && u.addr && j < n; j++) h = (h ^ ((const uint8_t *)(uintptr_t)u.addr)[j]) * 0x100000001b3ull;
+            LOG("[draw]   %s cb%d %llx+%llu (shader %u%s)", stage ? "fs" : "vs", k, (unsigned long long)u.addr,
+                (unsigned long long)u.size, si->cbuf_size[k], (si->cbuf_dynamic & (1u << k)) ? " dynamic" : "");
+            if (!stage) LOG(" hash %016llx", (unsigned long long)h);
+            LOG("\n");
+            if (!u.addr || k == 3 || (!stage && k == 7)) continue;
+            const float *f = (const float *)(uintptr_t)u.addr;
+            for (uint64_t q = 0; q < (stage ? 32u : 16u) && q * 16 + 16 <= u.size; q++)
+                LOG("[draw]     %scb%d[%llu] %g %g %g %g\n", stage ? "f" : "", k, (unsigned long long)q, f[q * 4], f[q * 4 + 1],
+                    f[q * 4 + 2], f[q * 4 + 3]);
+        }
+    }
     for (int i = 0; i < 32 && i < st.nattrib; i++)  // vertex attributes: guest format, stream (stride, divisor), offset
         if (pr->vi->attr_mask & (1u << i)) {
             uint32_t a = st.attrib[i], s = (a >> 8) & 0x1F;
-            LOG("[draw]   attr%d fmt %#x stream %u (stride %u div %u) off %u\n", i, a & 0xFF, s,
-                s < (uint32_t)st.nstream ? st.stream[s][0] : 0, s < (uint32_t)st.nstream ? st.stream[s][1] : 0, a >> 13);
+            LOG("[draw]   attr%d fmt %#x stream %u (stride %u div %u) off %u vbuf %llx+%llu\n", i, a & 0xFF, s,
+                s < (uint32_t)st.nstream ? st.stream[s][0] : 0, s < (uint32_t)st.nstream ? st.stream[s][1] : 0, a >> 13,
+                (unsigned long long)st.vbuf[s].addr, (unsigned long long)st.vbuf[s].size);
         }
     for (int i = 0; i < st.rt.ncolor; i++)  // target views (layer / level selections)
         if (st.rt.color[i] && st.rt.has_cview[i])
