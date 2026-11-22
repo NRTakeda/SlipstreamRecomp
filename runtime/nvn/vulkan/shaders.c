@@ -511,6 +511,14 @@ int vk_precompile_one(const uint8_t *code, size_t max_size, int stage, const Sha
         hd.msl_len = (uint32_t)strlen(si->msl);
         xlate_store(h, &hd, si);
         made = true;
+        // (debugging) SAVAGEWIND_XLATE_DUMP=<dir>: every translation made here, as <id>_s<stage>.glsl
+        const char *dump = getenv("SAVAGEWIND_XLATE_DUMP");
+        if (dump && *dump) {
+            char path[1024];
+            snprintf(path, sizeof path, "%s/%016llx_s%d.glsl", dump, (unsigned long long)h, stage);
+            FILE *f = fopen(path, "w");
+            if (f) { fputs(si->msl, f); fclose(f); }
+        }
     }
     int r = vk_spirv_ensure(si->msl, stage);
     maxwell_free(si);
