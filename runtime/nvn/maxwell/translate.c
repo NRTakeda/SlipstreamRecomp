@@ -1131,6 +1131,72 @@ static void emit_tex(Ctx *c, uint64_t w, uint32_t pc, bool bindless) {
 }
 
 // ------------------------------------------------------------------ instruction translation
+// A guest instruction reads all its sources before it writes any destination, but its emitted statements run in
+// order: a statement reading a register that an earlier statement of the same instruction wrote would see the new
+// value (LDC.64 with its base as destination did: MK8's flags). A register's own chain (r = f(r)) is how emitters
+// build one value, so only another register's statement counts. Such a read gets the value from before the
+// instruction, saved in _g<N>; the code says "// guard" (shaders.c logs translations that needed it).
+static bool guard_reg_at(const char *p, const char *start, int *n, const char **end) {
+    if (*p != 'r' || (p > start && (id_char(p[-1]) || p[-1] == '.'))) return false;
+    const char *q = p + 1;
+    if (*q < '0' || *q > '9') return false;
+    int v = 0;
+    while (*q >= '0' && *q <= '9') v = v * 10 + (*q++ - '0');
+    if (id_char(*q)) return false;
+    *n = v, *end = q;
+    return true;
+}
+
+// One pass over an instruction's code: marks (out NULL) or renames (out) the reads above. True if there were any.
+static bool guard_pass(const char *t, size_t len, bool *hazard, Str *out) {
+    uint8_t written[256] = {0};
+    bool any = false;
+    const char *s = t, *e = t + len;
+    while (s < e) {
+        const char *q = s;
+        while (q < e && *q != ';' && *q != '{' && *q != '}' && *q != '\n') q++;
+        const char *a = s;
+        while (a < q && *a == ' ') a++;
+        bool comment = q - a >= 2 && a[0] == '/' && a[1] == '/';
+        int lhs = -1, n;
+        const char *rhs = a, *pe;
+        if (!comment && guard_reg_at(a, t, &n, &pe)) {
+            const char *z = pe;
+            while (z < q && *z == ' ') z++;
+            if (z < q && *z == '=' && (z + 1 >= q || z[1] != '=')) lhs = n, rhs = z + 1;
+        }
+        if (out) sp(out, "%.*s", (int)(rhs - s), s);
+        const char *copied = rhs;
+        for (const char *p = rhs; !comment && p < q; p++) {
+            if (!guard_reg_at(p, t, &n, &pe)) continue;
+            if (n < 256 && written[n] && n != lhs) {
+                any = true;
+                if (hazard) hazard[n] = true;
+                if (out) sp(out, "%.*s_g%d", (int)(p - copied), copied, n), copied = pe;
+            }
+            p = pe - 1;
+        }
+        if (out) sp(out, "%.*s", (int)(q - copied) + (q < e), copied);
+        if (lhs >= 0 && lhs < 256) written[lhs] = 1;
+        s = q + 1;
+    }
+    return any;
+}
+
+static void guard_self_reads(Ctx *c, size_t from) {
+    bool hazard[256] = {0};
+    if (!guard_pass(c->body.buf + from, c->body.len - from, hazard, NULL)) return;
+    Str fixed = {0};
+    sp(&fixed, "    {");
+    for (int r = 0; r < 256; r++) if (hazard[r]) sp(&fixed, " uint _g%d = r%d;", r, r);
+    sp(&fixed, "  // guard\n");
+    guard_pass(c->body.buf + from, c->body.len - from, NULL, &fixed);
+    sp(&fixed, "    }\n");
+    c->body.len = from;
+    sp(&c->body, "%s", fixed.buf);
+    free(fixed.buf);
+}
+
 static void emit_insn(Ctx *c, uint64_t w, uint32_t pc) {
     char t[2048], u[2048];
     int d = (int)bits(w, 0, 8), a = (int)bits(w, 8, 8);
@@ -3117,6 +3183,7 @@ ShaderInfo *maxwell_translate(const uint8_t *blob, size_t max_size, int stage, c
         if (annotate) sp(&c->body, "    // pc %x: %016llx\n", pc, (unsigned long long)((const uint64_t *)code)[i]);
         size_t from = c->body.len;
         emit_insn(c, ((const uint64_t *)code)[i], pc);
+        if (c->body.buf) guard_self_reads(c, from);
         if (c->body.buf) note_writes(&c->writes[i], c->body.buf, c->body.buf + from, c->body.buf + c->body.len);
         if (dbg && pc == maxwell_dbg_pc) {
             int rr = maxwell_dbg_reg % 1000, half = maxwell_dbg_reg / 1000;  // +1000: low f16, +2000: high f16

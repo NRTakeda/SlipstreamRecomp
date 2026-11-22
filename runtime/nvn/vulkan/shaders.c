@@ -1,6 +1,7 @@
 // Translated NVN programs (with their cache), shader modules, descriptor layouts from the SPIR-V itself, built-in
 // shaders. GLSL -> SPIR-V is in spirv.c.
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,6 +13,8 @@
 #include "../../hash.h"
 #include "../shader_archive.h"
 #include "shaders.h"
+
+static void xlate_note_guard(uint64_t h, int stage, const ShaderInfo *si);
 
 // What the translated shaders depend on besides their binaries: the translator's sources (maxwell_translator_id)
 // and the GLSL -> SPIR-V step's (vk_spirv_id). Caches built from translated shaders (cache/xlate, the pipeline cache,
@@ -504,6 +507,7 @@ int vk_precompile_one(const uint8_t *code, size_t max_size, int stage, const Sha
             maxwell_free(si);
             return -1;
         }
+        xlate_note_guard(h, stage, si);
         hd.msl_len = (uint32_t)strlen(si->msl);
         xlate_store(h, &hd, si);
         made = true;
@@ -530,6 +534,16 @@ ShaderInfo *vk_translate_peek(const uint8_t *code, size_t max_size, int stage, c
     ShaderInfo *si = xlate_tab[slot].h == h ? xlate_tab[slot].si : NULL;
     pthread_mutex_unlock(&xlate_lock);
     return si;
+}
+
+// A translation the translator had to guard (a read after its own instruction's write, translate.c guard_self_reads):
+// logged, a translator bug to fix even though the guard keeps the shader right.
+static void xlate_note_guard(uint64_t h, int stage, const ShaderInfo *si) {
+    if (!si->msl || !strstr(si->msl, "// guard")) return;
+    int n = 0;
+    for (const char *p = si->msl; (p = strstr(p, "// guard")); p++) n++;
+    static _Atomic int nlog;
+    if (atomic_fetch_add(&nlog, 1) < 40) LOG("[xlate] shader %016llx (stage %d): %d instructions read a register they had written; guarded\n", (unsigned long long)h, stage, n);
 }
 
 ShaderInfo *vk_translate_cached(const uint8_t *code, size_t max_size, int stage, const ShaderKey *key) {
@@ -561,6 +575,7 @@ ShaderInfo *vk_translate_cached(const uint8_t *code, size_t max_size, int stage,
     if (!si) {
         si = maxwell_translate(code, max_size, stage, key);
         if (!si->msl) return si;
+        xlate_note_guard(h, stage, si);
         hd.msl_len = (uint32_t)strlen(si->msl);
         xlate_store(h, &hd, si);
     }
