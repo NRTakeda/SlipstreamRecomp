@@ -1227,7 +1227,12 @@ static void emit_insn(Ctx *c, uint64_t w, uint32_t pc) {
         int n = sz == 5 ? 2 : 1;
         char rb[16];
         const char *dyn = a == RZ ? NULL : reg(c, a, rb);
-        for (int i = 0; i < n; i++) {
+        // LDC.64 Rd, c[k][Rd + imm] reads its address before writing either register; the words are emitted one by
+        // one, so when the base is Rd itself the high word goes first (MK8's skinned flags: their depth pre-pass
+        // read half of each bone matrix from wherever the low word pointed, and the colour pass failed EQUAL).
+        bool base_first = dyn && n == 2 && a == d;
+        for (int k = 0; k < n; k++) {
+            int i = base_first ? n - 1 - k : k;
             char cb[256];
             cbuf_ref(c, idx, off + 4 * i, dyn, cb);
             if (!dyn && (off + 4 * i) & 0) {}
@@ -2976,14 +2981,14 @@ static bool walk_path(Ctx *c, WalkSet *ws, Walk *s, const uint64_t *code, size_t
             int idx = (int)bits(w, 36, 5), a = (int)bits(w, 8, 8), d = (int)bits(w, 0, 8);
             uint32_t off = (uint32_t)bits(w, 20, 16);
             int words = bits(w, 48, 3) == 5 ? 2 : 1;
-            for (int k = 0; k < words; k++) {
+            for (int k = 0; k < words; k++)  // (every word from the base as it was: the emitted order keeps it so)
                 if (a != RZ && idx < 18) {
                     uint32_t vec = (wv(s, a) + off + 4u * (uint32_t)k) >> 4;
                     if (!wk(s, a) || vec >= 4096) *whole |= 1u << idx;  // (past 64 KB: the clamp reads the last vec4)
                     else if (vec + 1 > reach[idx]) reach[idx] = vec + 1;
                 }
-                if (d + k < RZ) wset(s, d + k, false, 0);  // (before the next word's address: as emitted)
-            }
+            for (int k = 0; k < words; k++)
+                if (d + k < RZ) wset(s, d + k, false, 0);
         }
         int d = (int)bits(w, 0, 8);
         uint32_t v = 0;
