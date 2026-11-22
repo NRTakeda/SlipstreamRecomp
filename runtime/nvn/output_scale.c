@@ -21,6 +21,7 @@
 #include <string.h>
 
 #include "../framepace.h"
+#include "../game_sites.h"
 #include "../hle.h"
 #include "../platform.h"
 #include "../settings.h"
@@ -443,6 +444,12 @@ void output_scale(double dw, double dh, bool reshape_allowed, OutScale *o) {
     // where the image goes in the window: fills it when reshaped (or near-16:9 snapped), else a fitted 16:9 box
     if (reshape || near_fit) { o->vw = dw; o->vh = dh; }
     else { o->vw = 1920.0 * fit; o->vh = 1080.0 * fit; }
+    // MK8: no widened view (its HUD and menus assume 16:9), so a 16:10 screen like the Steam Deck's would show bars
+    // above and below; stretch the 16:9 image over the whole window instead, as the emulators' 16:10 setting does.
+    // SAVAGEWIND_MK8_STRETCH=0 keeps the bars.
+    static int mk8_stretch = -1;
+    if (mk8_stretch < 0) mk8_stretch = !getenv("SAVAGEWIND_MK8_STRETCH") || atoi(getenv("SAVAGEWIND_MK8_STRETCH")) != 0;
+    if (!reshape && !near_fit && mk8_stretch && !rt_is_botw()) { o->vw = dw; o->vh = dh; }
     if (wide_test > 0) {
         double f2 = fmin(dw / (1920.0 * wide_test), dh / 1080.0);
         o->vw = 1920.0 * wide_test * f2; o->vh = 1080.0 * f2;
