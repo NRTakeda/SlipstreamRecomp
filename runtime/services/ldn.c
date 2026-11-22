@@ -23,7 +23,45 @@ typedef struct {
     int discovery_fd;
     _Atomic int stop;
     bool responder_running;
+    // Host: the stations that joined (their control address) and when each was last heard from.
+    struct sockaddr_in stations[7];
+    uint64_t station_seen[7];
+    int nstations;
+    // Station: the control socket kept open to the host after Connect, its heartbeat thread, the host's address.
+    int ctl_fd;
+    pthread_t guest;
+    _Atomic int guest_stop;
+    bool guest_running;
+    struct sockaddr_in host_addr;
+    _Atomic unsigned disconnect_reason;
 } LdnUser;
+
+// A peer not heard from for this long is gone (closed game, sleep, Wi-Fi lost): the other side leaves the room at once
+// instead of waiting on the game's own long timeouts behind a black screen.
+#define LDN_PEER_TIMEOUT_NS 4000000000ull
+
+static uint64_t ldn_now(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
+}
+
+static void ldn_signal(LdnUser *user) {
+    if (user->event) { klock(); kernel_signal(user->event); kunlock(); }
+}
+
+static bool same_addr(const struct sockaddr_in *a, const struct sockaddr_in *b) {
+    return a->sin_addr.s_addr == b->sin_addr.s_addr && a->sin_port == b->sin_port;
+}
+
+// Host: forget station i (caller holds info_lock) and mark its node slot free.
+static void host_drop_station(LdnUser *user, int i, const char *why) {
+    uint8_t *ip = (uint8_t *)&user->stations[i].sin_addr.s_addr;
+    LOG("[ldn] station %u.%u.%u.%u left (%s)\n", ip[0], ip[1], ip[2], ip[3], why);
+    user->stations[i] = user->stations[--user->nstations];
+    user->station_seen[i] = user->station_seen[user->nstations];
+    if (!user->nstations) { memset(user->info + 0xa8, 0, 0x40); user->info[0x67] = 1; }
+}
 
 static _Atomic unsigned poll_log_count, scan_log_count;
 
@@ -67,16 +105,47 @@ static void *ldn_respond(void *arg) {
             pthread_mutex_unlock(&user->info_lock);
             memcpy(reply, "SWJ1", 4);
             sendto(user->discovery_fd, reply, sizeof reply, 0, (struct sockaddr *)&from, n);
+            pthread_mutex_lock(&user->info_lock);
+            int k = 0;
+            while (k < user->nstations && !same_addr(&user->stations[k], &from)) k++;
+            if (k == user->nstations && k < 7) user->stations[user->nstations++] = from;
+            if (k < 7) user->station_seen[k] = ldn_now();
+            pthread_mutex_unlock(&user->info_lock);
             LOG("[ldn] station joined: %u.%u.%u.%u\n", node[3], node[2], node[1], node[0]);
-            if (user->event) { klock(); kernel_signal(user->event); kunlock(); }
+            ldn_signal(user);
             memcpy(reply, "SWA1", 4);
+        } else if (got == 4 && (!memcmp(query, "SWH1", 4) || !memcmp(query, "SWL1", 4))) {
+            bool leave = !memcmp(query, "SWL1", 4), dropped = false;
+            pthread_mutex_lock(&user->info_lock);
+            for (int k = 0; k < user->nstations; k++)
+                if (same_addr(&user->stations[k], &from)) {
+                    if (leave) { host_drop_station(user, k, "disconnected"); dropped = true; }
+                    else user->station_seen[k] = ldn_now();
+                    break;
+                }
+            pthread_mutex_unlock(&user->info_lock);
+            if (!leave) sendto(user->discovery_fd, "SWH1", 4, 0, (struct sockaddr *)&from, n);
+            if (dropped) ldn_signal(user);
         }
+        bool dropped = false;
+        uint64_t now = ldn_now();
+        pthread_mutex_lock(&user->info_lock);
+        for (int k = user->nstations - 1; k >= 0; k--)
+            if (now - user->station_seen[k] > LDN_PEER_TIMEOUT_NS) { host_drop_station(user, k, "no signal"); dropped = true; }
+        pthread_mutex_unlock(&user->info_lock);
+        if (dropped) ldn_signal(user);
     }
     return NULL;
 }
 
 static void ldn_stop(LdnUser *user) {
     if (!user->responder_running) return;
+    pthread_mutex_lock(&user->info_lock);
+    for (int k = 0; k < user->nstations; k++)  // the room closes: each station leaves it now
+        for (int r = 0; r < 3; r++)
+            sendto(user->discovery_fd, "SWD1", 4, 0, (struct sockaddr *)&user->stations[k], sizeof user->stations[k]);
+    user->nstations = 0;
+    pthread_mutex_unlock(&user->info_lock);
     atomic_store(&user->stop, 1);
     pthread_join(user->responder, NULL);
     close(user->discovery_fd);
@@ -84,8 +153,53 @@ static void ldn_stop(LdnUser *user) {
     user->responder_running = false;
 }
 
+// Station: heartbeat to the host once a second; the host closing the room (SWD1) or going silent puts this station
+// back to the Station state with a disconnect reason and signals the game, like a real local-wireless drop.
+static void *ldn_guest(void *arg) {
+    LdnUser *user = arg;
+    uint64_t seen = ldn_now(), sent = 0;
+    unsigned reason = 0;
+    while (!atomic_load(&user->guest_stop)) {
+        uint64_t now = ldn_now();
+        if (now - sent >= 1000000000ull) {
+            sendto(user->ctl_fd, "SWH1", 4, 0, (struct sockaddr *)&user->host_addr, sizeof user->host_addr);
+            sent = now;
+        }
+        uint8_t msg[8];
+        ssize_t got = recv(user->ctl_fd, msg, sizeof msg, 0);
+        if (got == 4 && !memcmp(msg, "SWH1", 4)) seen = ldn_now();
+        else if (got == 4 && !memcmp(msg, "SWD1", 4)) { reason = 3; break; }  // DestroyedByUser
+        if (ldn_now() - seen > LDN_PEER_TIMEOUT_NS) { reason = 6; break; }      // SignalLost
+    }
+    if (reason) {
+        pthread_mutex_lock(&user->info_lock);
+        user->state = 4;
+        atomic_store(&user->disconnect_reason, reason);
+        pthread_mutex_unlock(&user->info_lock);
+        LOG("[ldn] disconnected from the room (%s)\n", reason == 3 ? "host closed it" : "no signal");
+        ldn_signal(user);
+    }
+    return NULL;
+}
+
+static void guest_stop(LdnUser *user, bool tell_host) {
+    if (user->guest_running) {
+        atomic_store(&user->guest_stop, 1);
+        pthread_join(user->guest, NULL);
+        user->guest_running = false;
+    }
+    if (user->ctl_fd >= 0) {
+        if (tell_host)
+            for (int r = 0; r < 3; r++)
+                sendto(user->ctl_fd, "SWL1", 4, 0, (struct sockaddr *)&user->host_addr, sizeof user->host_addr);
+        close(user->ctl_fd);
+        user->ctl_fd = -1;
+    }
+}
+
 static void ldn_close(Service *s) {
     LdnUser *user = s->state;
+    guest_stop(user, true);
     ldn_stop(user);
     pthread_mutex_destroy(&user->info_lock);
     free(user);
@@ -162,7 +276,14 @@ static void ldn_connect(LdnUser *user, IpcReq *req, IpcResp *resp) {
             memcpy(user->info, reply + 4, sizeof user->info);
             user->state = 5;
             LOG("[ldn] connected to room %s:%u\n", peer, discovery_port());
-            close(fd);
+            guest_stop(user, false);
+            struct timeval tick = {.tv_sec = 0, .tv_usec = 200000};
+            setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tick, sizeof tick);
+            user->ctl_fd = fd;
+            user->host_addr = addr;
+            atomic_store(&user->disconnect_reason, 0);
+            atomic_store(&user->guest_stop, 0);
+            user->guest_running = pthread_create(&user->guest, NULL, ldn_guest, user) == 0;
             return;
         }
     }
@@ -216,7 +337,7 @@ static void ldn_user(Service *s, IpcReq *req, IpcResp *resp) {
             req->cmd, req->data_size, req->nx, req->na, req->nb, req->nc);
     switch (req->cmd) {
     case 400: case 402: user->state = 1; break;  // Initialize / Initialize2
-    case 401: ldn_stop(user); user->state = 0; break;  // Finalize
+    case 401: guest_stop(user, true); ldn_stop(user); user->state = 0; break;  // Finalize
     case 0: OUT(uint32_t, 0) = user->state; resp_size(resp, 4); break;
     case 1:  // GetNetworkInfo
         pthread_mutex_lock(&user->info_lock);
@@ -231,7 +352,7 @@ static void ldn_user(Service *s, IpcReq *req, IpcResp *resp) {
         resp_size(resp, 8);
         break;
     }
-    case 3: OUT(int16_t, 0) = 0; resp_size(resp, 2); break;
+    case 3: OUT(int16_t, 0) = (int16_t)atomic_load(&user->disconnect_reason); resp_size(resp, 2); break;  // GetDisconnectReason
     case 4:  // GetSecurityParameter
         memcpy(resp->data + 16, user->info + 0x10, 16);
         resp_size(resp, 32);
@@ -255,10 +376,10 @@ static void ldn_user(Service *s, IpcReq *req, IpcResp *resp) {
     case 202: ldn_created(user, req); break;
     case 204: ldn_stop(user); user->state = 2; break;
     case 300: user->state = 4; break;  // OpenStation
-    case 301: user->state = 1; break;
+    case 301: guest_stop(user, true); user->state = 1; break;  // CloseStation
     case 102: case 103: ldn_scan(user, req, resp); break;
     case 302: ldn_connect(user, req, resp); break;
-    case 304: user->state = 4; break;
+    case 304: guest_stop(user, true); user->state = 4; break;  // Disconnect
     case 206: {  // SetAdvertiseData
         IpcBuf *b = in_buf(req, 0);
         if (b && b->addr && b->size <= 0x180) {
@@ -284,6 +405,7 @@ SERVICE("ldn:u", ldn_creator) {
     if (req->cmd == 0) {
         LdnUser *state = calloc(1, sizeof *state);
         state->discovery_fd = -1;
+        state->ctl_fd = -1;
         pthread_mutex_init(&state->info_lock, NULL);
         Service *user = service_new("IUserLocalCommunicationService", ldn_user, state);
         user->on_close = ldn_close;
