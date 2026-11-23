@@ -211,6 +211,7 @@ typedef struct {
     int color_saturation;    // percent, -100..100 (-100: black and white)
     int color_temperature;   // -100 (cooler, blue) .. 100 (warmer, orange)
     int color_tint;          // -100 (green) .. 100 (magenta)
+    char player_name[0x21];  // the account nickname games show (MK8DX: over each racer in local play); "" = Player
     char color_lut[128];     // color_lut_id(): "" none, "sw:<file>" shipped, "<file>" the player's luts/ folder
     int color_lut_strength;  // percent, 0..100
     bool color_lut_set;      // the ini names a LUT (or none): the player chose; the first setup offers COLOR_LUT_RECOMMENDED

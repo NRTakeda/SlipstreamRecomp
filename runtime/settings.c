@@ -685,6 +685,8 @@ void settings_load(void) {
             for (int i = 1; i < g_nvoice_languages; i++)
                 if (!strcmp(val, g_voice_languages[i].folder)) g_settings.voice_language = i;
         }
+        else if (!strcmp(key, "player_name"))  // (up to 32 bytes of UTF-8; empty: Player)
+            snprintf(g_settings.player_name, sizeof g_settings.player_name, "%s", val);
         else if (!strcmp(key, "menu_tip_seen")) g_settings.menu_tip_seen = atoi(val) != 0, tip_key = true;
         else bind_settings_load(key, val);  // bind_pad_* / bind_key_*: runtime/hle/bindings.c
     }
@@ -936,6 +938,7 @@ bool settings_save_to(const char *path) {
     fprintf(f, "colour_tint = %d\n", g_settings.color_tint);
     fprintf(f, "colour_lut = %s\n", g_settings.color_lut[0] ? g_settings.color_lut : "none");
     fprintf(f, "colour_lut_strength = %d\n", g_settings.color_lut_strength);
+    fprintf(f, "player_name = %s\n", g_settings.player_name);
     int tl = g_settings.text_language, vl = g_settings.voice_language;
     fprintf(f, "text_language = %s\n", tl > 0 && tl < g_ntext_languages ? g_text_languages[tl].folder : "auto");
     fprintf(f, "voice_language = %s\n", vl > 0 && vl < g_nvoice_languages ? g_voice_languages[vl].folder : "text");
