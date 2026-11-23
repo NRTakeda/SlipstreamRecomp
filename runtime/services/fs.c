@@ -2116,7 +2116,7 @@ static void write_mii_nftr(const char *dir, const char *name) {
     char path[1200];
     snprintf(path, sizeof path, "%s/%s", dir, name);
     struct stat sb;
-    if (stat(path, &sb) == 0 && sb.st_size == (off_t)total_size) return;
+    if (stat(path, &sb) == 0 && sb.st_size > 0) return;  // (the console's own file, put there by the player, or ours)
     uint8_t *buf = calloc(1, total_size);
     if (!buf) return;
     memcpy(buf, "NFTR", 4);
@@ -2155,7 +2155,7 @@ static void write_mii_nfsr(const char *dir, const char *name) {
     char path[1200];
     snprintf(path, sizeof path, "%s/%s", dir, name);
     struct stat sb;
-    if (stat(path, &sb) == 0 && sb.st_size == (off_t)total_size) return;
+    if (stat(path, &sb) == 0 && sb.st_size > 0) return;
     uint8_t *buf = calloc(1, total_size);
     if (!buf) return;
     memcpy(buf, "NFSR", 4);
@@ -2187,6 +2187,10 @@ static void write_mii_nfsr(const char *dir, const char *name) {
     free(buf);
 }
 
+// The Mii model archive (system data 0100000000000802: head shapes and face textures) is the console's, not the game's:
+// without it the files below are empty stand-ins (no texture or shape data), enough for the games that open it, and
+// MK8DX's Mii racers get no head. Put the archive's six files (from the player's own firmware) in cache/mii_model and
+// they are used as they are.
 static Service *open_mii_model_storage(void) {
     const char *dir = "cache/mii_model";
     mkdir("cache", 0755);
