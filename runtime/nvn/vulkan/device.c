@@ -3137,6 +3137,9 @@ static bool boot_held(void) {  // (GPU lock held: present_locked)
     // the draws of the frame before this one
     uint64_t total = vk_draw_total(), d = total - boot_draws_last;
     boot_draws_last = total;
+    // (the title screen is found in BOTW only: another game (MK8DX) counts from its first frame, and the picture goes
+    // once its frames' draws settle - its logo, then the title - instead of holding until the time limit)
+    if (!boot_title_at && !rt_is_botw()) boot_title_at = now;
     if (!boot_title_at && framepace_title_ui()) {
         boot_title_at = now;
         LOG("[boot] title screen up %.2f s after the start (frame %llu)\n", (now - boot_hold_since) / 1e9,
