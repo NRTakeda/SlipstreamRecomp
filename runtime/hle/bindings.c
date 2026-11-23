@@ -673,8 +673,11 @@ static bool act_held_host(int id, int (*held)(int scancode), uint32_t host) {
 // During gameplay, decouple in-game action buttons (Y/X/A/B) from raw menu rebinds
 // so that rebinding a menu slot (e.g. "Menu: sort / sensor") never hijacks actions in play.
 // Only the raw keyboard/pad mask is rewritten; script/console/cursor/auto-continue bits stay untouched.
+// The actions are BOTW's: another game (MK8DX) has none, and no menu detection either, so this ran on every poll and
+// put A/B/X/Y back on the factory positions, ignoring bind_pad_a..y. Those games keep the button bindings as they are.
 uint64_t act_gameplay_buttons(uint64_t raw, int (*held)(int scancode), uint32_t host) {
-    raw &= ~((1ull << BIND_Y) | (1ull << BIND_X) | (1ull << BIND_A) | (1ull << BIND_B));
+    if (!rt_is_botw()) return raw;
+    raw &=~((1ull << BIND_Y) | (1ull << BIND_X) | (1ull << BIND_A) | (1ull << BIND_B));
     if (act_held_host(3, held, host) || act_held_host(36, held, host)) raw |= 1ull << BIND_Y;
     if (act_held_host(2, held, host)) raw |= 1ull << BIND_X;
     if (act_held_host(0, held, host)) raw |= 1ull << BIND_A;
