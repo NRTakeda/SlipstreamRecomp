@@ -13,6 +13,13 @@
 (Nintendo Switch, version 1.9.0) into a native application for Windows and Linux, built from your own copy of the
 game.
 
+> [!NOTE]
+> **Slipstream Recomp** is a fork that adds *Mario Kart 8 Deluxe* 4.0.1 to the Savage Wind runtime, recompiled the
+> same way from your own copy of that game: see **[Mario Kart 8 Deluxe](docs/mk8dx.md)** (game files, building,
+> saves, local wireless play). It is not the official Savage Wind and is not supported by its maintainer; for
+> *Breath of the Wild* use [Savage Wind Recomp](https://github.com/Revivedx/SavageWindRecomp). The same rules apply
+> to both games: no game files, keys, firmware or generated code here, and nothing that helps to get them.
+
 <p align="center">
   <img src="https://i.imgur.com/BaTJyr9.jpg" alt="Screenshot of Savage Wind" width="24%">
   <img src="https://i.imgur.com/USibLkg.jpg" alt="Screenshot of Savage Wind" width="24%">
