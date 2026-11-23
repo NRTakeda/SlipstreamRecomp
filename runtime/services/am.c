@@ -182,7 +182,16 @@ static void application_functions(Service *s, IpcReq *req, IpcResp *resp) {
         LOG("[am] GetDesiredLanguage -> %s\n", code);
         break;
     }
-    case 23: memcpy(resp->data, "1.0.0", 6); resp_size(resp, 0x10); break;
+    case 23: {  // GetDisplayVersion: the game's own version (MK8DX writes it into its save and will not load a save
+        // written by a newer version: with "1.0.0" here it set the player's 4.0.1 save aside and made a new one)
+        extern const char *g_game_version;
+        const char *v = g_game_version && *g_game_version && strspn(g_game_version, "0123456789.") == strlen(g_game_version)
+                            ? g_game_version : "1.0.0";
+        memset(resp->data, 0, 0x10);
+        memcpy(resp->data, v, strlen(v) < 0x0f ? strlen(v) : 0x0f);
+        resp_size(resp, 0x10);
+        break;
+    }
     case 40: OUT(uint8_t, 0) = 0; resp_size(resp, 1); break;  // NotifyRunning
     case 130: case 140: resp->copy_handles[resp->ncopy++] = new_event(); break;
     // GetHealthWarningDisappearedSystemEvent: BOTW 1.8.2 waits on it before its first frame; there is no
