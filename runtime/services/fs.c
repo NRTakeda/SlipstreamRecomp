@@ -1792,6 +1792,16 @@ static void host_path(HostFs *fs, const char *p, char *out, size_t n) {
     snprintf(out, n, "%s%s%s", fs->root, p[0] == '/' ? "" : "/", p);
 }
 
+// SAVAGEWIND_LOG_SAVE=1: every save mount and file operation (open, read, write, size, create, delete, rename) in
+// the log
+static bool save_log(void) {
+    static int on = -1;
+    if (on < 0) on = getenv("SAVAGEWIND_LOG_SAVE") != NULL;
+    return on;
+}
+
+static bool save_log_on(const char *path) { return save_log() && strstr(path, "/save_"); }
+
 static uint32_t errno_result(void) {
     if (errno == ENOENT || errno == ENOTDIR) return FS_PATH_NOT_FOUND;
     if (errno == EEXIST) return FS_PATH_EXISTS;
@@ -1903,6 +1913,8 @@ static void file(Service *s, IpcReq *req, IpcResp *resp) {
             perfcount_add(PC_FILE_READS, 1), perfcount_add(PC_FILE_NS, plat_now_ns() - ft0);
             if (n > 0) perfcount_add(PC_FILE_BYTES, (uint64_t)n);
         }
+        if (save_log_on(f->path))
+            LOG("[save] read %s off %lld size %lld -> %lld\n", f->path, (long long)off, (long long)size, (long long)n);
         if (strstr(f->path, "savedata")) {
             LOG("[save] read %s off %lld size %lld -> guest %llx\n", f->path, (long long)off, (long long)size, (unsigned long long)b->addr);
         }
@@ -1913,6 +1925,8 @@ static void file(Service *s, IpcReq *req, IpcResp *resp) {
     case 1: {  // Write(option, offset, size) <- A
         int64_t off = IN(int64_t, 8), size = IN(int64_t, 16);
         IpcBuf *a = in_buf(req, 0);
+        if (save_log_on(f->path))
+            LOG("[save] write %s off %lld size %lld\n", f->path, (long long)off, (long long)size);
         if (strstr(f->path, "savedata"))
             LOG("[save] write %s off %lld size %lld <- guest %llx\n", f->path, (long long)off, (long long)size, (unsigned long long)a->addr);
         int tries = 0;
@@ -1927,8 +1941,10 @@ static void file(Service *s, IpcReq *req, IpcResp *resp) {
     case 2:  // Flush
         if (f->written && !flush_later(f->path)) fsync(f->fd);  // (its result unread, as before)
         f->written = false;
+        if (save_log_on(f->path)) LOG("[save] flush %s\n", f->path);
         break;
     case 3: {
+        if (save_log_on(f->path)) LOG("[save] set size %s %lld\n", f->path, (long long)IN(int64_t, 0));
         int tries = 0, r;
         while ((r = ftruncate(f->fd, IN(int64_t, 0))) && fs_retry(&tries, "resize", f->path)) {}
         if (r) resp->result = errno_result();
@@ -1939,6 +1955,7 @@ static void file(Service *s, IpcReq *req, IpcResp *resp) {
         struct stat sb;
         fstat(f->fd, &sb);
         OUT(int64_t, 0) = sb.st_size;
+        if (save_log_on(f->path)) LOG("[save] size %s = %lld\n", f->path, (long long)sb.st_size);
         resp_size(resp, 8);
         break;
     }
@@ -1975,8 +1992,10 @@ static void directory(Service *s, IpcReq *req, IpcResp *resp) {
                 snprintf(p, sizeof p, "%s/%s", d->path, e->d_name);
                 if (!stat(p, &sb)) *(int64_t *)(ent + 0x308) = sb.st_size;
             }
+            if (save_log_on(d->path)) LOG("[save] dir entry %s type %u size %lld\n", (char *)ent, ent[0x304], (long long)*(int64_t *)(ent + 0x308));
             n++;
         }
+        if (save_log_on(d->path)) LOG("[save] dir read %s max %lld -> %lld\n", d->path, (long long)max, (long long)n);
         OUT(int64_t, 0) = n;
         resp_size(resp, 8);
         break;
@@ -1989,6 +2008,7 @@ static void directory(Service *s, IpcReq *req, IpcResp *resp) {
         while ((e = readdir(d->d)))
             if (strcmp(e->d_name, ".") && strcmp(e->d_name, "..")) n++;
         seekdir(d->d, pos);
+        if (save_log_on(d->path)) LOG("[save] dir count %s = %lld\n", d->path, (long long)n);
         OUT(int64_t, 0) = n;
         resp_size(resp, 8);
         break;
@@ -2015,6 +2035,7 @@ static void filesystem(Service *s, IpcReq *req, IpcResp *resp) {
     char p[2048], p2[2048];
     host_path(fs, in_path(req, 0), p, sizeof p);
     int tries = 0, r;
+    if (save_log_on(p)) LOG("[save] IFileSystem cmd %u %s (arg %llx)\n", req->cmd, p, (unsigned long long)IN(uint64_t, 0));
     switch (req->cmd) {
     case 0: {  // CreateFile(option, size)
         int fd;
@@ -2212,9 +2233,17 @@ SERVICE("fsp-srv", fsp_srv) {
     case 18: ipc_return_object(resp, open_host_fs("sdcard")); break;
     case 22: break;  // CreateSaveDataFileSystem
     case 51: case 53: {  // OpenSaveDataFileSystem(space, attribute)
-        uint8_t type = IN(uint8_t, 0x8 + 0x18);  // attribute.type
+        // The attribute (after the u8 space id, at 0x8): program id, user id (0x10 bytes), system save id, then the
+        // type at 0x20 (1 account, 3 device). The account save keeps save_0, where it always was (this read the
+        // system save id before, 0 for every save). Other types get save_<type>: MK8DX has a device save too (its
+        // replays) and cleans each folder of the other's files: sharing save_0 it deleted userdata.dat at every start
+        // and the progress was lost.
+        uint8_t type = IN(uint8_t, 0x8 + 0x20);
         char sub[64];
-        snprintf(sub, sizeof sub, "save_%u", type);
+        snprintf(sub, sizeof sub, "save_%u", type == 1 ? 0u : (unsigned)type);
+        if (save_log())
+            LOG("[save] OpenSaveDataFileSystem type %u user %016llx%016llx -> %s\n", type,
+                (unsigned long long)IN(uint64_t, 0x10), (unsigned long long)IN(uint64_t, 0x18), sub);
         ipc_return_object(resp, open_host_fs(sub));
         break;
     }
