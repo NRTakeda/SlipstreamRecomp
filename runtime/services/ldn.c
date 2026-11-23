@@ -398,7 +398,7 @@ static void ldn_user(Service *s, IpcReq *req, IpcResp *resp) {
         resp->copy_handles[resp->ncopy++] = user->event_handle;
         break;
     }
-    // Every state change signals the game's state event, as on the console (Eden and Ryujinx do the same): MK8DX
+    // Every state change signals the game's state event, as on the console: MK8DX
     // waits for it after DestroyNetwork / CloseAccessPoint / Disconnect / CloseStation, and without it sat on a
     // white screen for ~45 s (its own time limit) on leaving a room before going back to the menu.
     if (user->state != state_before) ldn_signal(user);
