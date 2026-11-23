@@ -335,6 +335,7 @@ static void ldn_user(Service *s, IpcReq *req, IpcResp *resp) {
         atomic_fetch_add(&poll_log_count, 1) < 20)
         LOG("[ldn] IUserLocalCommunicationService cmd %u (in %u bytes, x%d a%d b%d c%d)\n",
             req->cmd, req->data_size, req->nx, req->na, req->nb, req->nc);
+    uint32_t state_before = user->state;
     switch (req->cmd) {
     case 400: case 402: user->state = 1; break;  // Initialize / Initialize2
     case 401: guest_stop(user, true); ldn_stop(user); user->state = 0; break;  // Finalize
@@ -397,6 +398,10 @@ static void ldn_user(Service *s, IpcReq *req, IpcResp *resp) {
         resp->copy_handles[resp->ncopy++] = user->event_handle;
         break;
     }
+    // Every state change signals the game's state event, as on the console (Eden and Ryujinx do the same): MK8DX
+    // waits for it after DestroyNetwork / CloseAccessPoint / Disconnect / CloseStation, and without it sat on a
+    // white screen for ~45 s (its own time limit) on leaving a room before going back to the menu.
+    if (user->state != state_before) ldn_signal(user);
 }
 
 SERVICE("ldn:u", ldn_creator) {
