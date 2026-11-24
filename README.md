@@ -15,8 +15,9 @@ game.
 
 > [!NOTE]
 > **Slipstream Recomp** is a fork that adds *Mario Kart 8 Deluxe* 4.0.1 to the Savage Wind runtime, recompiled the
-> same way from your own copy of that game: see **[Mario Kart 8 Deluxe](docs/mk8dx.md)** (game files, building,
-> saves, local wireless play). It is not the official Savage Wind and is not supported by its maintainer; for
+> same way from your own copy of that game: download the AppImage from Releases, open it and choose the folder with
+> your extracted game files. See **[Mario Kart 8 Deluxe](docs/mk8dx.md)** (getting started, game files, saves, local
+> wireless play). It is not the official Savage Wind and is not supported by its maintainer; for
 > *Breath of the Wild* use [Savage Wind Recomp](https://github.com/Revivedx/SavageWindRecomp). The same rules apply
 > to both games: no game files, keys, firmware or generated code here, and nothing that helps to get them.
 

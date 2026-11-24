@@ -28,23 +28,48 @@ Game Mode):
 
 Known issues are in [Known issues](#known-issues).
 
+## Getting started (Linux and Steam Deck)
+
+1. Download `Slipstream_Recomp-<version>-x86_64.AppImage` from the [Releases](../../../releases) page.
+2. Make it executable (in the file manager: Properties > Permissions > *Is executable*, or
+   `chmod +x Slipstream_Recomp-*.AppImage`) and open it. On a Steam Deck, do this in Desktop Mode.
+3. The start screen asks for your game files: choose the folder that holds your extracted copy of the game
+   (see [Game files](#game-files)).
+4. It checks that the files are version 4.0.1, copies them into its data folder (`~/.local/share/slipstream-recomp`;
+   hard links when they're on the same drive, so no second 12 GB) and builds the game code on your machine. That
+   takes a few minutes and about 5 GB of free space while it builds. Then the game starts.
+5. From then on, opening the AppImage goes straight into the game. *Slipstream Recomp Configuration* (the AppImage's
+   menu entry, or `--config`) has the settings, the game files and *Add to Steam*: on a Steam Deck that gives you two
+   entries in the Steam library, so you can play from Game Mode.
+
+Slipstream Recomp keeps its own data folder and its own Steam entries, so it doesn't touch a Savage Wind set up for
+*Breath of the Wild* on the same machine.
+
 ## Game files
 
-The same layout as BOTW's (see [Game files](game-files.md)), with your *Mario Kart 8 Deluxe*:
+Your own *Mario Kart 8 Deluxe*, updated to 4.0.1, extracted as files:
 
 ```
-extracted/
+<your folder>/
   exefs/   main, main.npdm, rtld, sdk, subsdk0   (version 4.0.1)
-  romfs/   the complete RomFS: base game and the 4.0.1 update merged
-  aoc1/    optional: your Booster Course Pass add-on content's RomFS
+  romfs/   the complete RomFS: the base game with the 4.0.1 update applied over it
+  aoc1/    optional: your Booster Course Pass add-on content's RomFS (version.txt and contents.dat)
 ```
 
-The `main` module's build id must start with `158c0c7399aabd7b` (4.0.1); `python tools/sw_probe.py` prints it.
+- The folder names don't have to be these: the setup finds the ExeFS (`main` and `main.npdm`), the RomFS (the folder
+  with `Course/` and `RaceCommon/`) and the add-on content (`version.txt` and `contents.dat`) a few levels below the
+  folder you choose.
+- The `main` module's build id must start with `158c0c7399aabd7b` (4.0.1); `python tools/sw_probe.py` prints it.
+- The RomFS must be the one with the update applied: 6,597 files. The base game's RomFS alone, or the update's alone,
+  is refused with what was found.
+- The Booster Course Pass courses come with the 4.0.1 update; the add-on content is what unlocks them, as on the
+  console. It can also be set up later: choose its folder alone in *Set up game files*.
 
-## Building and running
+## Building from source
 
-Build it as a source build of Savage Wind ([Linux](linux.md), [Windows](BUILD-windows.md)), with your files in
-`extracted/` next to the repository's `Makefile`:
+For Windows (no release yet) or to change the code: build it as a source build of Savage Wind
+([Linux](linux.md), [Windows](BUILD-windows.md)), with your files in `extracted/` next to the repository's
+`Makefile`:
 
 ```
 python3 -m venv tools/venv && tools/venv/bin/pip install lz4 capstone unicorn
@@ -53,13 +78,15 @@ make -j8        # build/savagewind and build/swgame.so
 build/savagewind --play extracted
 ```
 
+`make appimage` builds the AppImage itself (in podman containers; see [Linux](linux.md)). It holds no game code.
+
 `build/swgame.so` and `generated/` are made from your copy of the game and contain Nintendo's code: they are for
 your own use only. Don't share, upload or attach them anywhere.
 
-To run the program from another folder (for example on a Steam Deck), keep these next to `savagewind`:
-`swgame.so`, `swgame.so.id`, and the two fonts `third_party/fonts/FiraSans/FiraSans-SemiBold.ttf` and
-`FiraSans-Medium.ttf` (without them the menus fall back on a tiny built-in font). The data folder (saves,
-settings, shader caches) is chosen with `SAVAGEWIND_DATA_ROOT` (see [Data folder](data-folder.md)).
+To run a source build from another folder, keep these next to `savagewind`: `swgame.so`, `swgame.so.id`, and the
+two fonts `third_party/fonts/FiraSans/FiraSans-SemiBold.ttf` and `FiraSans-Medium.ttf` (without them the menus fall
+back on a tiny built-in font). The data folder (saves, settings, shader caches) is chosen with
+`SAVAGEWIND_DATA_ROOT` (see [Data folder](data-folder.md)).
 
 ## Saves
 
