@@ -1,14 +1,11 @@
 blank_issues_enabled: false
 contact_links:
-  - name: FAQ and known issues
-    url: https://github.com/Revivedx/SavageWindRecomp/blob/main/docs/FAQ.md
-    about: "Read this first: issues about something it already covers are closed right away."
-  - name: Before you report a bug
-    url: https://github.com/Revivedx/SavageWindRecomp/blob/main/docs/FAQ.md#reporting-a-problem
-    about: The supported versions, where savagewind.log is, and what every report needs.
-  - name: Latest release and known issues
-    url: https://github.com/Revivedx/SavageWindRecomp/releases/latest
-    about: Downloads, what's new, and the issues already known in this release.
-  - name: Want to share code or a fix?
-    url: https://github.com/Revivedx/SavageWindRecomp/blob/main/CONTRIBUTING.md#pull-requests
-    about: "Don't open an issue for it: open a pull request against the test branch. Issues that share code are closed."
+  - name: Getting started and game files
+    url: https://github.com/NRTakeda/SlipstreamRecomp/blob/slipstream/docs/mk8dx.md
+    about: "Read this first: the game version, the folder to choose, saves, local wireless play and known issues."
+  - name: Latest release
+    url: https://github.com/NRTakeda/SlipstreamRecomp/releases/latest
+    about: Downloads and what's new.
+  - name: Breath of the Wild?
+    url: https://github.com/Revivedx/SavageWindRecomp
+    about: "For Breath of the Wild, use Savage Wind Recomp. Don't report Slipstream Recomp's problems there."
