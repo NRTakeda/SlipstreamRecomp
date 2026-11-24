@@ -64,11 +64,27 @@ static void sanitize_text(char *dst, size_t cap, const char *src) {
     dst[w] = 0;
 }
 
+// Mario Kart 8 Deluxe (docs/mk8dx.md): its add-on content, the Booster Course Pass, is one pack whose RomFS is a
+// licence of two files, version.txt and contents.dat (the courses come with the game's 4.0.1 update), set up as aoc1.
+static bool is_mk8dx_dlc_dir(const char *dir) {
+    char ver[2048], contents[2048];
+    return join2(ver, sizeof ver, dir, "version.txt") && join2(contents, sizeof contents, dir, "contents.dat") &&
+           reg_nonempty(ver) && reg_nonempty(contents);
+}
+
+// root's game files are MK8DX's (its data root has RaceCommon/ and Course/, which BOTW's has not)
+static bool is_mk8dx_root(const char *root) {
+    char a[2048], b[2048];
+    return join2(a, sizeof a, root, "romfs/RaceCommon") && join2(b, sizeof b, root, "romfs/Course") && is_dir_path(a) &&
+           is_dir_path(b);
+}
+
 static bool is_dlc_romfs_dir(const char *dir) {
     char aoc_ver[2048], game_ver[2048];
-    return join2(aoc_ver, sizeof aoc_ver, dir, "System/AocVersion.txt") &&
-           join2(game_ver, sizeof game_ver, dir, "System/Version.txt") &&
-           reg_nonempty(aoc_ver) && !file_exists_path(game_ver);
+    return (join2(aoc_ver, sizeof aoc_ver, dir, "System/AocVersion.txt") &&
+            join2(game_ver, sizeof game_ver, dir, "System/Version.txt") &&
+            reg_nonempty(aoc_ver) && !file_exists_path(game_ver)) ||
+           is_mk8dx_dlc_dir(dir);
 }
 
 static bool read_aoc_version(const char *dir, char *out, size_t cap) {
@@ -76,6 +92,7 @@ static bool read_aoc_version(const char *dir, char *out, size_t cap) {
     char p[2048];
     if (!join2(p, sizeof p, dir, "System/AocVersion.txt")) return false;
     FILE *f = fopen(p, "rb");
+    if (!f && join2(p, sizeof p, dir, "version.txt")) f = fopen(p, "rb");  // (MK8DX's licence)
     if (!f) return false;
     char raw[64] = "";
     size_t n = fread(raw, 1, sizeof raw - 1, f);
@@ -211,6 +228,18 @@ RtDlcCheck rt_dlc_check(const char *root) {
     }
 
     bool has1 = (out.present_mask & 1u) != 0, has2 = (out.present_mask & 2u) != 0;
+    if (is_mk8dx_root(root)) {  // (one pack, in aoc1)
+        char a1[2048];
+        if (has1 && join2(a1, sizeof a1, root, "aoc1") && is_mk8dx_dlc_dir(a1)) {
+            read_aoc_version(a1, out.version, sizeof out.version);
+            out.state = RT_DLC_READY;
+        } else {
+            out.state = RT_DLC_INCOMPLETE;
+            out.nested = has1 && has_nested_dlc(a1);
+            snprintf(out.detail, sizeof out.detail, "aoc1/contents.dat");
+        }
+        return out;
+    }
     if (!has1 && !has2) {
         out.state = RT_DLC_INCOMPLETE;
         snprintf(out.detail, sizeof out.detail, "aoc1");
@@ -298,6 +327,22 @@ RtDlcCheck rt_dlc_check(const char *root) {
 RtDlcCheck rt_dlc_verify(const char *root) {
     RtDlcCheck out = rt_dlc_check(root);
     if (out.state != RT_DLC_READY) return out;
+
+    if (is_mk8dx_root(root)) {  // (its licence: both files read)
+        const char *const files[] = {"aoc1/version.txt", "aoc1/contents.dat"};
+        for (size_t i = 0; i < sizeof files / sizeof files[0]; i++) {
+            char p[2048];
+            struct stat st;
+            if (!join2(p, sizeof p, root, files[i]) || !can_read_bytes(p) || stat(p, &st)) {
+                out.state = RT_DLC_INCOMPLETE;
+                snprintf(out.detail, sizeof out.detail, "%s", files[i]);
+                return out;
+            }
+            out.files++;
+            out.bytes += (uint64_t)st.st_size;
+        }
+        return out;
+    }
 
     for (int idx = 1; idx <= 2; idx++) {
         char name[16], dir[2048], why[128] = "";

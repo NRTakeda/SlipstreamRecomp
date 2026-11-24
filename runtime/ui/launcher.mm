@@ -164,6 +164,12 @@ static const GameVersion *main_version(const std::string &id) {
         if (*v.id && id == v.id) return &v;
     return nullptr;
 }
+// Mario Kart 8 Deluxe 4.0.1 (this fork, docs/mk8dx.md): its RomFS has no System/Version.txt and no Movie/ of
+// BOTW's videos, so it's told apart by its files and their sizes alone (with the update applied over the base game:
+// the 4.0.1 update brings the Booster Course Pass courses, the base game's RomFS has far fewer). Its downloadable
+// content is a licence: one RomFS of two files, version.txt and contents.dat (runtime/dlc_check.c).
+static const char *const MK8DX_ID = "158c0c7399aabd7b";
+static bool is_mk8dx(const GameVersion &v) { return !strcmp(v.id, MK8DX_ID); }
 static bool supported_main(const std::string &id) {
     const GameVersion *v = main_version(id);
     return v && v->supported;
@@ -228,7 +234,8 @@ static bool movies_complete(const std::string &romfs) { return count_files(romfs
 // cartridge's RomFS, which says its own older version, or with the update's RomFS alone, which has far fewer files.
 static std::string check_romfs(const std::string &romfs, const GameVersion &v) {
     char found[64] = "";
-    if (FILE *f = fopen((romfs + "/System/Version.txt").c_str(), "rb")) {
+    if (is_mk8dx(v)) snprintf(found, sizeof found, "%s", v.name);  // (no version file: the files and bytes below)
+    else if (FILE *f = fopen((romfs + "/System/Version.txt").c_str(), "rb")) {
         size_t n = fread(found, 1, sizeof found - 1, f);
         fclose(f);
         found[n] = 0;
@@ -270,7 +277,7 @@ static std::string check_copied_files(const std::string &root) {
         return v ? NOT_SUPPORTED_YET : NOT_SUPPORTED;
     }
     if (!is_dir(root + "/romfs")) return "Game data missing";
-    if (id != "158c0c7399aabd7b" && !movies_complete(root + "/romfs")) return "Game files incomplete";
+    if (id != MK8DX_ID && !movies_complete(root + "/romfs")) return "Game files incomplete";
     return "";
 }
 
@@ -394,10 +401,12 @@ static bool is_romfs_dir(const std::string &dir) {
     size_t sl = dir.find_last_of("/\\");
     std::string n = sl == std::string::npos ? dir : dir.substr(sl + 1);
     for (auto &ch : n) ch = (char)tolower((unsigned char)ch);
-    return n == "romfs" || file_exists(dir + "/System/Version.txt");
+    return n == "romfs" || file_exists(dir + "/System/Version.txt") ||
+           (is_dir(dir + "/RaceCommon") && is_dir(dir + "/Course"));  // (MK8DX's data root)
 }
 static bool is_dlc_romfs(const std::string &dir) {
-    return file_exists(dir + "/System/AocVersion.txt") && !file_exists(dir + "/System/Version.txt");
+    return (file_exists(dir + "/System/AocVersion.txt") && !file_exists(dir + "/System/Version.txt")) ||
+           (file_exists(dir + "/version.txt") && file_exists(dir + "/contents.dat"));  // (MK8DX's licence)
 }
 static void find_game(const std::string &dir, int depth, std::string &exefs, std::string &romfs,
                       std::vector<std::string> &dlc, bool &unusable) {
@@ -655,7 +664,9 @@ static std::string aoc_name(const char *fmt, int i) {
 }
 static std::string aoc_version(const std::string &dir) {
     char v[32] = "";
-    if (FILE *f = fopen((dir + "/System/AocVersion.txt").c_str(), "rb")) {
+    FILE *f = fopen((dir + "/System/AocVersion.txt").c_str(), "rb");
+    if (!f) f = fopen((dir + "/version.txt").c_str(), "rb");  // (MK8DX's licence)
+    if (f) {
         size_t n = fread(v, 1, sizeof v - 1, f);
         fclose(f);
         v[n] = 0;
@@ -741,7 +752,7 @@ static void dlc_log(const RtDlcCheck &c) {
     last_state = c.state, last_detail = cur;
     if (c.state == RT_DLC_NONE) return;
     if (c.state == RT_DLC_READY)
-        fprintf(stderr, "[launcher] dlc: ready (aoc1 + aoc2, version \"%s\")\n", c.version);
+        fprintf(stderr, "[launcher] dlc: ready (%s, version \"%s\")\n", dlc_folders_list(c.present_mask).c_str(), c.version);
     else
         fprintf(stderr, "[launcher] dlc: %s (mask=0x%x version=\"%s\" detail=\"%s\"%s)\n", rt_dlc_state_name(c.state),
                 c.present_mask, c.version, c.detail, c.nested ? " nested" : "");
@@ -881,7 +892,7 @@ static void *extract_thread(void *) {
         const GameVersion *v = main_version(id);
         std::string found = check_romfs(romfs, *v);  // (the RomFS that goes with that ExeFS)
         if (!found.empty()) { set_romfs_failure(*v, found); goto done; }
-        if (!movies_complete(romfs)) {
+        if (!is_mk8dx(*v) && !movies_complete(romfs)) {
             fprintf(stderr, "[launcher] romfs: Movie/ has fewer than the game's %u videos\n", MOVIE_FILES);
             set_failure(FAIL_MISSING);
             goto done;
