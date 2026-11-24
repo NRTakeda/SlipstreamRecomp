@@ -500,7 +500,7 @@ build/gen-venv/.ok:
 	$(GEN_VPY) -m pip install -q capstone==5.0.9 unicorn==2.1.4 lz4==4.4.5 pyinstaller==6.22.3
 	touch $@
 
-# Linux: build/dist/Savage_Wind-<version>-<arch>.AppImage, built in Ubuntu 22.04 containers (podman) with SDL3, LGPL
+# Linux: build/dist/Slipstream_Recomp-<version>-<arch>.AppImage, built in Ubuntu 22.04 containers (podman) with SDL3, LGPL
 # FFmpeg, shaderc and the game code generator helper inside; the Vulkan loader and GPU drivers are the system's.
 # `make appimage` (ARCH: this machine's, or aarch64 cross-compiled), `make appimages` both. See docs/linux.md.
 appimage:

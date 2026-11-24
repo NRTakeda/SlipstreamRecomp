@@ -1,19 +1,19 @@
 {
   "$schema": "https://recomplauncher.com/schema/recomplauncher.json",
   "format": 1,
-  "name": "Savage Wind",
-  "repo": "Revivedx/SavageWindRecomp",
+  "name": "Slipstream Recomp",
+  "repo": "NRTakeda/SlipstreamRecomp",
   "game": {
     "kind": "folder",
-    "label": "Your own extracted copy of The Legend of Zelda: Breath of the Wild, version 1.9.0: the folder with exefs and romfs (and the DLC folders aoc1 and aoc2, if you have them).",
+    "label": "Your own extracted copy of Mario Kart 8 Deluxe, version 4.0.1: the folder with exefs and romfs (and the Booster Course Pass folder aoc1, if you have it).",
     "check": { "file": "exefs/main" }
   },
   "start": {
-    "program": ["savagewind.exe", "Savage_Wind-x86_64.AppImage"],
+    "program": ["savagewind.exe", "Slipstream_Recomp-x86_64.AppImage"],
     "args": ["--game"]
   },
   "prepare": {
-    "program": ["savagewind.exe", "Savage_Wind-x86_64.AppImage"],
+    "program": ["savagewind.exe", "Slipstream_Recomp-x86_64.AppImage"],
     "args": ["--prepare", "--game", "{game}"],
     "label": "Copying your game files and building the game code",
     "timeout": 7200
@@ -24,7 +24,7 @@
       "format": "ini",
       "file": [
         { "path": "{install}/savagewind.ini", "if": "{install}/savagewind.exe" },
-        { "path": "{local}/savagewind/savagewind.ini" }
+        { "path": "{local}/slipstream-recomp/savagewind.ini" }
       ]
     }
   ],
@@ -32,18 +32,18 @@
     "{install}/save",
     "{install}/save-profiles",
     "{install}/save_profile.txt",
-    "{local}/savagewind/save",
-    "{local}/savagewind/save-profiles",
-    "{local}/savagewind/save_profile.txt"
+    "{local}/slipstream-recomp/save",
+    "{local}/slipstream-recomp/save-profiles",
+    "{local}/slipstream-recomp/save_profile.txt"
   ],
   "folders": {
     "saves": [
       { "path": "{install}/save", "if": "{install}/savagewind.exe" },
-      { "path": "{local}/savagewind/save" }
+      { "path": "{local}/slipstream-recomp/save" }
     ],
     "logs": [
       { "path": "{install}", "if": "{install}/savagewind.exe" },
-      { "path": "{local}/savagewind" }
+      { "path": "{local}/slipstream-recomp" }
     ]
   },
   "settings": [

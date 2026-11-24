@@ -407,8 +407,8 @@ static int our_entries(SteamEntry *e, char bufs[][1200]) {
     snprintf(bufs[1], 1200, "\"%s\\Savage Wind Configuration.exe\"", dir);
     snprintf(bufs[2], 1200, "\"%s\\\"", dir);
     snprintf(bufs[3], 1200, "%s", exe);
-    e[0] = (SteamEntry){"Savage Wind", bufs[0], bufs[2], bufs[3], "--game"};
-    e[1] = (SteamEntry){"Savage Wind Configuration", bufs[1], bufs[2], bufs[3], ""};
+    e[0] = (SteamEntry){"Slipstream Recomp", bufs[0], bufs[2], bufs[3], "--game"};
+    e[1] = (SteamEntry){"Slipstream Recomp Configuration", bufs[1], bufs[2], bufs[3], ""};
 #else
     const char *ai = appimage_path();
     if (!ai) return 0;
@@ -431,8 +431,8 @@ static int our_entries(SteamEntry *e, char bufs[][1200]) {
     }
     snprintf(bufs[0], 1200, "\"%s\"", ai);
     snprintf(bufs[2], 1200, "\"%s/\"", dir);
-    e[0] = (SteamEntry){"Savage Wind", bufs[0], bufs[2], bufs[3], "--game"};
-    e[1] = (SteamEntry){"Savage Wind Configuration", bufs[0], bufs[2], bufs[3], "--config"};
+    e[0] = (SteamEntry){"Slipstream Recomp", bufs[0], bufs[2], bufs[3], "--game"};
+    e[1] = (SteamEntry){"Slipstream Recomp Configuration", bufs[0], bufs[2], bufs[3], "--config"};
 #endif
     return 2;
 }
@@ -499,7 +499,7 @@ static bool write_all(char roots[][1100], int nroots, const SteamEntry *e, int n
                 snprintf(why, ws, "Steam's list of shortcuts was left as it was: %s (%s)", w2, file);
                 return false;
             }
-            fprintf(stderr, "[steam] %s: Savage Wind entries written\n", file);
+            fprintf(stderr, "[steam] %s: Slipstream Recomp entries written\n", file);
             ++*users;
         }
         closedir(d);
@@ -567,7 +567,7 @@ bool steam_add_savage_wind(char *msg, size_t ms) {
         snprintf(msg, ms, "%s", why);
         return false;
     }
-    snprintf(msg, ms, "Added to Steam: \"Savage Wind\" (straight into the game) and \"Savage Wind Configuration\".");
+    snprintf(msg, ms, "Added to Steam: \"Slipstream Recomp\" (straight into the game) and \"Slipstream Recomp Configuration\".");
     return true;
 }
 

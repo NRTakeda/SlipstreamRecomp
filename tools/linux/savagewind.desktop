@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
-Name=Savage Wind
-Comment=Static recompilation runtime (bring your own game files)
+Name=Slipstream Recomp
+Comment=Mario Kart 8 Deluxe 4.0.1 on the Savage Wind runtime (bring your own game files)
 Exec=savagewind
 Icon=savagewind
 Categories=Game;
@@ -9,5 +9,5 @@ Terminal=false
 Actions=Configuration;
 
 [Desktop Action Configuration]
-Name=Savage Wind Configuration
+Name=Slipstream Recomp Configuration
 Exec=savagewind --config

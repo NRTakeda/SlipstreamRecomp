@@ -91,11 +91,12 @@ static void choose_root(char *root, size_t n, bool *dev, const char *start, cons
 #ifdef _WIN32
         snprintf(root, n, "%s", exe_dir);
 #elif defined(__linux__)
-        // (the AppImage is read-only): $XDG_DATA_HOME/savagewind, ~/.local/share/savagewind by default
+        // (the AppImage is read-only): $XDG_DATA_HOME/slipstream-recomp, ~/.local/share/slipstream-recomp by default
+        // (this fork's own: Savage Wind's, ~/.local/share/savagewind, keeps BOTW's game files on the same machine)
         const char *xdg = getenv("XDG_DATA_HOME"), *home = getenv("HOME");
         (void)exe_dir;
-        if (xdg && *xdg == '/') snprintf(root, n, "%s/savagewind", xdg);
-        else snprintf(root, n, "%s/.local/share/savagewind", home && *home ? home : "/tmp");
+        if (xdg && *xdg == '/') snprintf(root, n, "%s/slipstream-recomp", xdg);
+        else snprintf(root, n, "%s/.local/share/slipstream-recomp", home && *home ? home : "/tmp");
 #else
         const char *home = getenv("HOME");
         (void)exe_dir;

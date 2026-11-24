@@ -181,8 +181,8 @@ static void log_to_file(void) {
     struct stat st;
     if (env && *env) snprintf(dir, sizeof dir, "%s", env);
     else if (stat("extracted", &st) == 0 && S_ISDIR(st.st_mode)) return;  // dev mode: wherever stderr goes already
-    else if (xdg && *xdg == '/') snprintf(dir, sizeof dir, "%s/savagewind", xdg);
-    else snprintf(dir, sizeof dir, "%s/.local/share/savagewind", home && *home ? home : "/tmp");
+    else if (xdg && *xdg == '/') snprintf(dir, sizeof dir, "%s/slipstream-recomp", xdg);
+    else snprintf(dir, sizeof dir, "%s/.local/share/slipstream-recomp", home && *home ? home : "/tmp");
     for (char *c = dir + 1; *c; c++)
         if (*c == '/') { *c = 0; mkdir(dir, 0755); *c = '/'; }
     mkdir(dir, 0755);

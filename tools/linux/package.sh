@@ -1,7 +1,7 @@
 #!/bin/bash
 # tools/linux/package.sh <x86_64|aarch64> (inside the amd64 build container, tools/linux/appimage.sh): the game built
 # against build/linux/<arch>/deps and the game code generator helper (tools/linux/gen_helper.sh) put together
-# as an AppDir and packed by appimagetool: build/dist/Savage_Wind-<version>-<arch>.AppImage.
+# as an AppDir and packed by appimagetool: build/dist/Slipstream_Recomp-<version>-<arch>.AppImage.
 # Shipped next to the executable (usr/bin, where runtime/paths.c rt_resource looks): what the start screen
 # builds the game code with on the player's machine (runtime/gamebuild.c: swgen/, zig/ from tools/fetch_zig.sh,
 # gamelib-src/), the window icon, the start screen font. No game code: that's built from the player's own files. usr/lib: the libraries from deps/ only - glibc, libstdc++, zlib, the Vulkan loader
@@ -14,7 +14,7 @@ P=$L/deps
 B=$L/game
 APPDIR=$L/AppDir
 VERSION=$(sed -n 's/^#define SAVAGEWIND_VERSION "\(.*\)"/\1/p' runtime/ui/launcher.mm)
-OUT=build/dist/Savage_Wind-$VERSION-$ARCH.AppImage
+OUT=build/dist/Slipstream_Recomp-$VERSION-$ARCH.AppImage
 JOBS=$(nproc)
 
 tools/linux/build_deps.sh "$ARCH"

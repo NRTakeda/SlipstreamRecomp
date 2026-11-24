@@ -23,7 +23,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-#define REPO "Revivedx/SavageWindRecomp"
+#define REPO "NRTakeda/SlipstreamRecomp"  // (this fork's releases: Savage Wind's are for BOTW)
 #define FEED_URL "https://api.github.com/repos/" REPO "/releases?per_page=30"
 #define DOWNLOAD_PREFIX "https://github.com/" REPO "/releases/download/"
 #define HEALTH_EXIT 73  // savagewind --update-health (runtime/main.c)
